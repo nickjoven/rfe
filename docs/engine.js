@@ -12,16 +12,68 @@ function setAesthetic(name) {
     b.classList.toggle("active", (b.textContent.trim() === (name || "wire")))
   );
   try { localStorage.setItem("rfe-aesthetic", name); } catch(e) {}
+  if (name === "artemis") unlockArchery();
 }
 // restore saved aesthetic
 try { const saved = localStorage.getItem("rfe-aesthetic");
   if (saved !== null) setAesthetic(saved);
 } catch(e) {}
 
+// ── font size ─────────────────────────────────────────────────────────────
+const FONT_SIZES = [12, 14, 16, 18, 22];
+
+function setFontSize(size) {
+  document.documentElement.style.setProperty("--user-size", size + "px");
+  document.querySelectorAll("#aesthetic-bar button").forEach(b => {
+    if (FONT_SIZES.includes(+b.textContent)) {
+      b.classList.toggle("active", +b.textContent === size);
+    }
+  });
+  try { localStorage.setItem("rfe-fontsize", size); } catch(e) {}
+}
+try { const s = localStorage.getItem("rfe-fontsize");
+  if (s) setFontSize(+s);
+} catch(e) {}
+
+// ── font face ─────────────────────────────────────────────────────────────
+const FONT_FACES = {
+  "": "default", "Courier New": "Courier", "Consolas": "Consolas",
+  "Monaco": "Monaco", "Menlo": "Menlo", "SF Mono": "SF Mono",
+  "Fira Code": "Fira Code", "Source Code Pro": "Source Code Pro",
+  "JetBrains Mono": "JetBrains", "IBM Plex Mono": "IBM Plex"
+};
+
+function setFontFace(face) {
+  if (face) {
+    document.documentElement.style.setProperty("--user-face", `'${face}', monospace`);
+  } else {
+    document.documentElement.style.removeProperty("--user-face");
+  }
+  const label = FONT_FACES[face] ?? "default";
+  document.querySelectorAll("#font-bar button").forEach(b =>
+    b.classList.toggle("active", b.textContent.trim() === label)
+  );
+  try { localStorage.setItem("rfe-fontface", face); } catch(e) {}
+}
+try { const f = localStorage.getItem("rfe-fontface");
+  if (f !== null) setFontFace(f);
+} catch(e) {}
+
 // ── state ──────────────────────────────────────────────────────────────────
 let currentPhase = 0;
 let currentMode  = null;
 let phaseReached  = 0;   // highest phase unlocked
+let _archeryRAF   = null;
+let archeryUnlocked = false;
+try { if (localStorage.getItem("rfe-archery-unlocked") === "1") archeryUnlocked = true; } catch(e) {}
+
+function unlockArchery() {
+  if (archeryUnlocked) return;
+  archeryUnlocked = true;
+  try { localStorage.setItem("rfe-archery-unlocked", "1"); } catch(e) {}
+  const b = document.getElementById("btn-archery");
+  if (b) b.classList.remove("locked");
+}
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $stage     = document.getElementById("stage");
@@ -52,6 +104,7 @@ function updatePips() {
 function goPhase(i) {
   currentPhase = Math.max(0, Math.min(PHASES.length - 1, i));
   if (currentPhase > phaseReached) phaseReached = currentPhase;
+  if (phaseReached >= PHASES.length - 1) unlockArchery();
   updatePips();
   if (currentMode) setMode(currentMode);
 }
@@ -62,9 +115,10 @@ function advancePhase() {
 
 // ── mode switching ─────────────────────────────────────────────────────────
 function setMode(mode) {
+  if (mode === "archery" && !archeryUnlocked) return;
   currentMode = mode;
   // hide all
-  ["typewriter","surfer","reader","puzzle"].forEach(m => {
+  ["typewriter","surfer","reader","puzzle","archery"].forEach(m => {
     document.getElementById(m).style.display = "none";
   });
   document.querySelectorAll("#topbar .modes button").forEach(b => b.classList.remove("active"));
@@ -74,6 +128,7 @@ function setMode(mode) {
 
   // teardown
   if (_surferRAF) { cancelAnimationFrame(_surferRAF); _surferRAF = null; }
+  if (_archeryRAF) { cancelAnimationFrame(_archeryRAF); _archeryRAF = null; }
 
   // init
   switch (mode) {
@@ -81,6 +136,7 @@ function setMode(mode) {
     case "surfer":     initSurfer();     break;
     case "reader":     initReader();     break;
     case "puzzle":     initPuzzle();     break;
+    case "archery":    initArchery();    break;
   }
 }
 
@@ -235,6 +291,7 @@ function surferTouch(e) {
 }
 
 function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function _fontFace() { return _css("--user-face") || _css("--mono"); }
 
 function surferLoop() {
   const { ctx, W, H } = surf;
@@ -258,7 +315,7 @@ function surferLoop() {
 
   // ── scrolling text (the content) ──
   const _dim = _css("--dim"), _gridC = _css("--grid");
-  ctx.font = "13px " + _css("--mono");
+  ctx.font = "13px " + _fontFace();
   ctx.textAlign = "center";
   const textStartY = H + 40 - surf.scroll * 0.6;
   surf.lines.forEach((line, i) => {
@@ -314,7 +371,7 @@ function surferLoop() {
 
   // ── equation at top ──
   ctx.fillStyle = _accent;
-  ctx.font = "11px " + _css("--mono");
+  ctx.font = "11px " + _fontFace();
   ctx.textAlign = "left";
   ctx.fillText(surf.eq, 12, 18);
 
@@ -515,6 +572,7 @@ function puzzleClick(i) {
     // second click dissolves
     puzzle.dissolved.add(i);
     renderPuzzle();
+    if (puzzle.dissolved.size >= PHASES.length) unlockArchery();
   }
 }
 
@@ -531,4 +589,8 @@ document.addEventListener("keydown", (e) => {
 
 // ── init ───────────────────────────────────────────────────────────────────
 updatePips();
+if (archeryUnlocked) {
+  const ab = document.getElementById("btn-archery");
+  if (ab) ab.classList.remove("locked");
+}
 setMode("reader");   // default mode

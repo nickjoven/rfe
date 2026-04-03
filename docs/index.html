@@ -87,8 +87,27 @@
 [data-aesthetic="familiar"] body{font-family:var(--mono)}
 [data-aesthetic="familiar"] #tw-display,
 [data-aesthetic="familiar"] #reader-text{line-height:2;font-size:16px}
+
+/* ── aesthetic: artemis (moon/geodesic) ────────────────── */
+[data-aesthetic="artemis"]{
+  --bg:#f0ede4;--fg:#1a2a33;--accent:#2a6878;
+  --dim:#8a96a0;--grid:#c8d0d4;--radius:8px;
+  --err:#cc3333;--err-bg:#ffdddd;
+  --ok:#2a7a4a;--ok-dim:#cceecc;
+  --glow:0 0 8px rgba(42,104,120,.15);
+}
+[data-aesthetic="artemis"] body{
+  background:radial-gradient(ellipse at 25% 85%,#e4e0d8 0%,#f0ede4 50%) fixed}
+[data-aesthetic="artemis"] #topbar .title{text-shadow:0 0 4px var(--accent)}
+[data-aesthetic="artemis"] .phase-pip.reached{box-shadow:0 0 3px var(--accent)}
+[data-aesthetic="artemis"] #tw-display .cursor-char{background:var(--accent);color:#fff}
+[data-aesthetic="artemis"] #topbar .modes button{border-radius:20px;padding:2px 12px}
+[data-aesthetic="artemis"] .puzzle-card{border-radius:var(--radius)}
 html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px}
+body{background:var(--bg);color:var(--fg);
+  font-family:var(--user-face, var(--mono));font-size:var(--user-size, 16px)}
+#tw-display,#reader-text{font-size:var(--user-size, 16px)}
+#reader-text .phase-title{font-size:calc(var(--user-size, 16px) + 3px)}
 
 /* ── layout ──────────────────────────────────────────────── */
 #app{display:flex;flex-direction:column;height:100vh}
@@ -102,16 +121,18 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
   transition:all .15s;border-radius:var(--radius)}
 #topbar .modes button:hover,#topbar .modes button.active{
   border-color:var(--accent);color:var(--accent);box-shadow:var(--glow)}
+#topbar .modes button.locked{opacity:0.2;pointer-events:none}
 
 /* ── aesthetic picker ───────────────────────────────────── */
-#aesthetic-bar{display:flex;align-items:center;gap:4px;padding:2px 16px;
+/* ── settings bars (aesthetic, font, size) ──────────────── */
+.settings-bar{display:flex;align-items:center;gap:4px;padding:2px 16px;
   border-bottom:1px solid var(--grid);font-size:10px;color:var(--dim);overflow-x:auto}
-#aesthetic-bar .aes-label{margin-right:4px;white-space:nowrap}
-#aesthetic-bar button{
+.settings-bar .bar-label{margin-right:4px;white-space:nowrap}
+.settings-bar button{
   background:none;border:1px solid var(--grid);color:var(--dim);
   padding:1px 7px;font-family:var(--mono);font-size:10px;cursor:pointer;
   transition:all .15s;white-space:nowrap;border-radius:var(--radius)}
-#aesthetic-bar button:hover,#aesthetic-bar button.active{
+.settings-bar button:hover,.settings-bar button.active{
   border-color:var(--accent);color:var(--accent)}
 #phase-bar{display:flex;padding:4px 16px;gap:2px;border-bottom:1px solid var(--grid)}
 .phase-pip{flex:1;height:4px;background:var(--grid);transition:background .4s}
@@ -124,7 +145,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 
 /* ── typewriter mode ─────────────────────────────────────── */
 #typewriter{display:none;flex-direction:column;height:100%;padding:24px 10%}
-#tw-display{flex:1;overflow-y:auto;line-height:1.8;font-size:15px;white-space:pre-wrap}
+#tw-display{flex:1;overflow-y:auto;line-height:1.8;white-space:pre-wrap}
 #tw-display .done{color:var(--accent)}
 #tw-display .cursor-char{background:var(--accent);color:var(--bg)}
 #tw-display .pending{color:var(--dim)}
@@ -136,12 +157,16 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 #surfer{display:none;height:100%;position:relative}
 #surfer-canvas{width:100%;height:100%}
 
+/* ── archery mode ──────────────────────────────────────────── */
+#archery{display:none;height:100%;position:relative}
+#archery-canvas{width:100%;height:100%}
+
 /* ── reader mode (press-to-continue + plant) ─────────────── */
 #reader{display:none;flex-direction:column;height:100%;padding:24px}
 #reader-plant{height:120px;display:flex;align-items:flex-end;justify-content:center;
   border-bottom:1px solid var(--grid);margin-bottom:16px}
-#reader-text{flex:1;overflow-y:auto;line-height:1.9;font-size:15px;padding:0 10%}
-#reader-text .phase-title{color:var(--accent);font-size:18px;margin-bottom:12px;display:block}
+#reader-text{flex:1;overflow-y:auto;line-height:1.9;padding:0 10%}
+#reader-text .phase-title{color:var(--accent);margin-bottom:12px;display:block}
 #reader-text .eq{color:var(--fg);font-size:16px;letter-spacing:1px;display:block;
   text-align:center;margin:12px 0;padding:8px;border:1px solid var(--grid)}
 #reader-prompt{text-align:center;padding:12px;color:var(--dim);font-size:12px}
@@ -176,10 +201,11 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
       <button onclick="setMode('reader')" id="btn-reader">3 READ</button>
       <button onclick="setMode('puzzle')" id="btn-puzzle">4 PUZZLE</button>
       <a href="rfe_journey.ipynb" style="border:1px solid var(--dim);color:var(--dim);padding:2px 8px;font-size:11px;text-decoration:none;display:inline-block" target="_blank">5 .ipynb</a>
+      <button onclick="setMode('archery')" id="btn-archery" class="locked">6 ARTEMIS</button>
     </div>
   </div>
-  <div id="aesthetic-bar">
-    <span class="aes-label">◈</span>
+  <div id="aesthetic-bar" class="settings-bar">
+    <span class="bar-label">◈</span>
     <button onclick="setAesthetic('')" class="active">wire</button>
     <button onclick="setAesthetic('space')">space</button>
     <button onclick="setAesthetic('bit')">bit</button>
@@ -187,6 +213,26 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
     <button onclick="setAesthetic('curved')">curved</button>
     <button onclick="setAesthetic('negative')">negative</button>
     <button onclick="setAesthetic('familiar')">familiar</button>
+    <button onclick="setAesthetic('artemis')">artemis</button>
+    <span class="bar-label" style="margin-left:8px">Aa</span>
+    <button onclick="setFontSize(12)">12</button>
+    <button onclick="setFontSize(14)">14</button>
+    <button onclick="setFontSize(16)" class="active" data-group="size">16</button>
+    <button onclick="setFontSize(18)">18</button>
+    <button onclick="setFontSize(22)">22</button>
+  </div>
+  <div id="font-bar" class="settings-bar">
+    <span class="bar-label">font</span>
+    <button onclick="setFontFace('')" class="active">default</button>
+    <button onclick="setFontFace('Courier New')">Courier</button>
+    <button onclick="setFontFace('Consolas')">Consolas</button>
+    <button onclick="setFontFace('Monaco')">Monaco</button>
+    <button onclick="setFontFace('Menlo')">Menlo</button>
+    <button onclick="setFontFace('SF Mono')">SF Mono</button>
+    <button onclick="setFontFace('Fira Code')">Fira Code</button>
+    <button onclick="setFontFace('Source Code Pro')">Source Code Pro</button>
+    <button onclick="setFontFace('JetBrains Mono')">JetBrains</button>
+    <button onclick="setFontFace('IBM Plex Mono')">IBM Plex</button>
   </div>
   <div id="phase-bar"></div>
   <div id="stage">
@@ -195,6 +241,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
     <div id="surfer"><canvas id="surfer-canvas"></canvas></div>
     <div id="reader"></div>
     <div id="puzzle"></div>
+    <div id="archery"><canvas id="archery-canvas"></canvas></div>
   </div>
   <div id="footer">
     <span id="footer-phase">Phase 1/7</span>
@@ -205,5 +252,6 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 
 <script src="content.js"></script>
 <script src="engine.js"></script>
+<script src="archery.js"></script>
 </body>
 </html>
