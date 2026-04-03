@@ -8,9 +8,85 @@
 /* ── wireframe reset ─────────────────────────────────────── */
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0a0a0c;--fg:#c8c8d0;--accent:#7eb8da;
-  --dim:#555;--grid:#181820;--mono:'Courier New',monospace;
+  --bg:#0a0a0c;--fg:#d8d8e0;--accent:#5ef0ff;
+  --dim:#777;--grid:#1c1c28;--mono:'Courier New',monospace;
+  --radius:0px;--err:#ff4466;--err-bg:#400018;
+  --ok:#44ffaa;--ok-dim:#1a6644;
+  --glow:0 0 6px var(--accent);
 }
+
+/* ── aesthetic: space ──────────────────────────────────── */
+[data-aesthetic="space"]{
+  --bg:#06060e;--fg:#c8d0f0;--accent:#44ddff;
+  --dim:#5566aa;--grid:#101028;
+  --err:#ff3366;--err-bg:#300028;
+  --ok:#33ffcc;--ok-dim:#1a5544;
+  --glow:0 0 12px var(--accent), 0 0 30px rgba(68,221,255,.15);
+}
+[data-aesthetic="space"] body{
+  background:radial-gradient(ellipse at 50% 0%,#0a0a2a 0%,#06060e 60%) fixed}
+[data-aesthetic="space"] .phase-pip.reached{box-shadow:0 0 4px var(--accent)}
+[data-aesthetic="space"] #topbar .title{text-shadow:0 0 8px var(--accent)}
+
+/* ── aesthetic: bit-limited ────────────────────────────── */
+[data-aesthetic="bit"]{
+  --bg:#0c0c0c;--fg:#33ff66;--accent:#33ff66;
+  --dim:#1a7733;--grid:#0a2a0a;
+  --mono:'Courier New',monospace;
+  --err:#ff3333;--err-bg:#330000;
+  --ok:#33ff66;--ok-dim:#0a3a0a;
+  --glow:0 0 4px #33ff66;
+}
+[data-aesthetic="bit"] *{border-radius:0 !important}
+[data-aesthetic="bit"] body{image-rendering:pixelated}
+
+/* ── aesthetic: minimal ────────────────────────────────── */
+[data-aesthetic="minimal"]{
+  --bg:#0e0e10;--fg:#eee;--accent:#fff;
+  --dim:#555;--grid:#1a1a1c;
+  --err:#ff6666;--err-bg:#2a0000;
+  --ok:#aaffcc;--ok-dim:#224422;
+  --glow:none;
+}
+[data-aesthetic="minimal"] #topbar .modes button{border-width:0;border-bottom:1px solid var(--dim)}
+[data-aesthetic="minimal"] #topbar .modes button.active{border-color:var(--accent)}
+[data-aesthetic="minimal"] .puzzle-card{border-width:0;border-left:2px solid var(--dim)}
+[data-aesthetic="minimal"] .puzzle-card:hover{border-color:var(--accent)}
+
+/* ── aesthetic: curved ─────────────────────────────────── */
+[data-aesthetic="curved"]{
+  --bg:#0d0d14;--fg:#ddd8f0;--accent:#c4a0ff;
+  --dim:#6655aa;--grid:#1a1828;--radius:12px;
+  --err:#ff6699;--err-bg:#30002a;
+  --ok:#88ffcc;--ok-dim:#1a4433;
+  --glow:0 0 10px rgba(196,160,255,.25);
+}
+[data-aesthetic="curved"] #topbar .modes button{border-radius:20px;padding:2px 12px}
+[data-aesthetic="curved"] .puzzle-card{border-radius:var(--radius)}
+[data-aesthetic="curved"] .phase-pip{border-radius:2px}
+
+/* ── aesthetic: negative ───────────────────────────────── */
+[data-aesthetic="negative"]{
+  --bg:#f0efe8;--fg:#1a1a1e;--accent:#0055cc;
+  --dim:#999;--grid:#d8d8d0;
+  --err:#cc0000;--err-bg:#ffdddd;
+  --ok:#007744;--ok-dim:#cceecc;
+  --glow:none;
+}
+[data-aesthetic="negative"] #tw-display .cursor-char{background:var(--accent);color:#fff}
+
+/* ── aesthetic: familiar ───────────────────────────────── */
+[data-aesthetic="familiar"]{
+  --bg:#1a1612;--fg:#e8dcc8;--accent:#ffaa44;
+  --dim:#887755;--grid:#2a2218;
+  --mono:Georgia,'Times New Roman',serif;
+  --err:#ee5533;--err-bg:#3a1a0a;
+  --ok:#88cc44;--ok-dim:#334422;
+  --glow:0 0 8px rgba(255,170,68,.2);
+}
+[data-aesthetic="familiar"] body{font-family:var(--mono)}
+[data-aesthetic="familiar"] #tw-display,
+[data-aesthetic="familiar"] #reader-text{line-height:2;font-size:16px}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px}
 
@@ -23,8 +99,19 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 #topbar .modes button{
   background:none;border:1px solid var(--dim);color:var(--dim);
   padding:2px 8px;font-family:var(--mono);font-size:11px;cursor:pointer;
-  transition:all .15s}
+  transition:all .15s;border-radius:var(--radius)}
 #topbar .modes button:hover,#topbar .modes button.active{
+  border-color:var(--accent);color:var(--accent);box-shadow:var(--glow)}
+
+/* ── aesthetic picker ───────────────────────────────────── */
+#aesthetic-bar{display:flex;align-items:center;gap:4px;padding:2px 16px;
+  border-bottom:1px solid var(--grid);font-size:10px;color:var(--dim);overflow-x:auto}
+#aesthetic-bar .aes-label{margin-right:4px;white-space:nowrap}
+#aesthetic-bar button{
+  background:none;border:1px solid var(--grid);color:var(--dim);
+  padding:1px 7px;font-family:var(--mono);font-size:10px;cursor:pointer;
+  transition:all .15s;white-space:nowrap;border-radius:var(--radius)}
+#aesthetic-bar button:hover,#aesthetic-bar button.active{
   border-color:var(--accent);color:var(--accent)}
 #phase-bar{display:flex;padding:4px 16px;gap:2px;border-bottom:1px solid var(--grid)}
 .phase-pip{flex:1;height:4px;background:var(--grid);transition:background .4s}
@@ -41,7 +128,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 #tw-display .done{color:var(--accent)}
 #tw-display .cursor-char{background:var(--accent);color:var(--bg)}
 #tw-display .pending{color:var(--dim)}
-#tw-display .wrong{color:#e55;background:#300}
+#tw-display .wrong{color:var(--err);background:var(--err-bg)}
 #tw-input{position:absolute;opacity:0;width:0;height:0}
 #tw-stats{padding:8px 0;font-size:12px;color:var(--dim);border-top:1px solid var(--grid)}
 
@@ -69,13 +156,13 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
 #puzzle-grid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 .puzzle-card{
   border:1px solid var(--dim);padding:16px 24px;max-width:600px;width:100%;
-  cursor:pointer;transition:all .3s}
+  cursor:pointer;transition:all .3s;border-radius:var(--radius)}
 .puzzle-card:hover{border-color:var(--accent)}
-.puzzle-card.dissolved{border-color:#484;color:#6a6;opacity:.6}
+.puzzle-card.dissolved{border-color:var(--ok-dim);color:var(--ok);opacity:.6}
 .puzzle-card .assumption{font-size:13px;color:var(--fg)}
 .puzzle-card .challenge{font-size:11px;color:var(--dim);margin-top:8px;display:none}
 .puzzle-card.revealed .challenge{display:block}
-.puzzle-card.dissolved .challenge{color:#6a6}
+.puzzle-card.dissolved .challenge{color:var(--ok)}
 #puzzle-status{text-align:center;padding:8px;font-size:12px;color:var(--dim)}
 </style>
 </head>
@@ -90,6 +177,16 @@ body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:14px
       <button onclick="setMode('puzzle')" id="btn-puzzle">4 PUZZLE</button>
       <a href="rfe_journey.ipynb" style="border:1px solid var(--dim);color:var(--dim);padding:2px 8px;font-size:11px;text-decoration:none;display:inline-block" target="_blank">5 .ipynb</a>
     </div>
+  </div>
+  <div id="aesthetic-bar">
+    <span class="aes-label">◈</span>
+    <button onclick="setAesthetic('')" class="active">wire</button>
+    <button onclick="setAesthetic('space')">space</button>
+    <button onclick="setAesthetic('bit')">bit</button>
+    <button onclick="setAesthetic('minimal')">minimal</button>
+    <button onclick="setAesthetic('curved')">curved</button>
+    <button onclick="setAesthetic('negative')">negative</button>
+    <button onclick="setAesthetic('familiar')">familiar</button>
   </div>
   <div id="phase-bar"></div>
   <div id="stage">

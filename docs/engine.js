@@ -5,6 +5,19 @@
 
 "use strict";
 
+// ── aesthetic ──────────────────────────────────────────────────────────────
+function setAesthetic(name) {
+  document.documentElement.setAttribute("data-aesthetic", name);
+  document.querySelectorAll("#aesthetic-bar button").forEach(b =>
+    b.classList.toggle("active", (b.textContent.trim() === (name || "wire")))
+  );
+  try { localStorage.setItem("rfe-aesthetic", name); } catch(e) {}
+}
+// restore saved aesthetic
+try { const saved = localStorage.getItem("rfe-aesthetic");
+  if (saved !== null) setAesthetic(saved);
+} catch(e) {}
+
 // ── state ──────────────────────────────────────────────────────────────────
 let currentPhase = 0;
 let currentMode  = null;
@@ -221,12 +234,18 @@ function surferTouch(e) {
   else if (x > 2 * surf.W / 3) surf.lane = Math.min(2, surf.lane + 1);
 }
 
+function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
 function surferLoop() {
   const { ctx, W, H } = surf;
   ctx.clearRect(0, 0, W, H);
 
+  // background fill (for non-default aesthetics)
+  ctx.fillStyle = _css("--bg");
+  ctx.fillRect(0, 0, W, H);
+
   // background grid
-  ctx.strokeStyle = "#181820";
+  ctx.strokeStyle = _css("--grid");
   ctx.lineWidth = 1;
   for (let x = 0; x < W; x += surf.laneW) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
@@ -238,14 +257,14 @@ function surferLoop() {
   }
 
   // ── scrolling text (the content) ──
-  ctx.font = "13px 'Courier New', monospace";
-  ctx.fillStyle = "#333";
+  const _dim = _css("--dim"), _gridC = _css("--grid");
+  ctx.font = "13px " + _css("--mono");
   ctx.textAlign = "center";
   const textStartY = H + 40 - surf.scroll * 0.6;
   surf.lines.forEach((line, i) => {
     const y = textStartY + i * surf.lineH;
     if (y > -20 && y < H + 20) {
-      ctx.fillStyle = y < H / 2 ? "#555" : "#2a2a35";
+      ctx.fillStyle = y < H / 2 ? _dim : _gridC;
       ctx.fillText(line.trim(), W / 2, y);
     }
   });
@@ -258,7 +277,7 @@ function surferLoop() {
   }
 
   // ── obstacles ──
-  ctx.fillStyle = "#444";
+  ctx.fillStyle = _dim;
   surf.obstacles.forEach(ob => {
     const oy = ob.y + surf.scroll;
     if (oy < -50 || oy > H + 50) return;
@@ -283,10 +302,10 @@ function surferLoop() {
 
   // ── player ──
   const px = surf.lane * surf.laneW + (surf.laneW - surf.playerW) / 2;
-  ctx.fillStyle = surf.alive ? "#7eb8da" : "#e55";
+  const _accent = _css("--accent"), _err = _css("--err");
+  ctx.fillStyle = surf.alive ? _accent : _err;
   ctx.fillRect(px, surf.playerY, surf.playerW, surf.playerH);
-  // wireframe border
-  ctx.strokeStyle = surf.alive ? "#aed8f0" : "#f88";
+  ctx.strokeStyle = surf.alive ? _accent : _err;
   ctx.strokeRect(px, surf.playerY, surf.playerW, surf.playerH);
 
   // ── HUD ──
@@ -294,8 +313,8 @@ function surferLoop() {
     (surf.alive ? "" : "<br><br>SPACE to retry");
 
   // ── equation at top ──
-  ctx.fillStyle = "#7eb8da";
-  ctx.font = "11px 'Courier New', monospace";
+  ctx.fillStyle = _accent;
+  ctx.font = "11px " + _css("--mono");
   ctx.textAlign = "left";
   ctx.fillText(surf.eq, 12, 18);
 
@@ -431,7 +450,7 @@ function renderPlant(progress) {
   ];
   const idx = Math.min(stages.length - 1, Math.floor(progress * stages.length));
   const plant = stages[idx];
-  return `<pre style="color:#7eb8da;font-size:11px;line-height:1.2">${plant.join("\n")}</pre>`;
+  return `<pre style="color:var(--accent);font-size:11px;line-height:1.2">${plant.join("\n")}</pre>`;
 }
 
 
