@@ -87,6 +87,22 @@
 [data-aesthetic="familiar"] body{font-family:var(--mono)}
 [data-aesthetic="familiar"] #tw-display,
 [data-aesthetic="familiar"] #reader-text{line-height:2;font-size:16px}
+
+/* ── aesthetic: artemis (moon/geodesic) ────────────────── */
+[data-aesthetic="artemis"]{
+  --bg:#f0ede4;--fg:#1a2a33;--accent:#2a6878;
+  --dim:#8a96a0;--grid:#c8d0d4;--radius:8px;
+  --err:#cc3333;--err-bg:#ffdddd;
+  --ok:#2a7a4a;--ok-dim:#cceecc;
+  --glow:0 0 8px rgba(42,104,120,.15);
+}
+[data-aesthetic="artemis"] body{
+  background:radial-gradient(ellipse at 25% 85%,#e4e0d8 0%,#f0ede4 50%) fixed}
+[data-aesthetic="artemis"] #topbar .title{text-shadow:0 0 4px var(--accent)}
+[data-aesthetic="artemis"] .phase-pip.reached{box-shadow:0 0 3px var(--accent)}
+[data-aesthetic="artemis"] #tw-display .cursor-char{background:var(--accent);color:#fff}
+[data-aesthetic="artemis"] #topbar .modes button{border-radius:20px;padding:2px 12px}
+[data-aesthetic="artemis"] .puzzle-card{border-radius:var(--radius)}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--fg);
   font-family:var(--user-face, var(--mono));font-size:var(--user-size, 16px)}
@@ -105,6 +121,7 @@ body{background:var(--bg);color:var(--fg);
   transition:all .15s;border-radius:var(--radius)}
 #topbar .modes button:hover,#topbar .modes button.active{
   border-color:var(--accent);color:var(--accent);box-shadow:var(--glow)}
+#topbar .modes button.locked{opacity:0.2;pointer-events:none}
 
 /* ── aesthetic picker ───────────────────────────────────── */
 /* ── settings bars (aesthetic, font, size) ──────────────── */
@@ -139,6 +156,10 @@ body{background:var(--bg);color:var(--fg);
 /* ── surfer mode ─────────────────────────────────────────── */
 #surfer{display:none;height:100%;position:relative}
 #surfer-canvas{width:100%;height:100%}
+
+/* ── archery mode ──────────────────────────────────────────── */
+#archery{display:none;height:100%;position:relative}
+#archery-canvas{width:100%;height:100%}
 
 /* ── reader mode (press-to-continue + plant) ─────────────── */
 #reader{display:none;flex-direction:column;height:100%;padding:24px}
@@ -180,6 +201,7 @@ body{background:var(--bg);color:var(--fg);
       <button onclick="setMode('reader')" id="btn-reader">3 READ</button>
       <button onclick="setMode('puzzle')" id="btn-puzzle">4 PUZZLE</button>
       <a href="rfe_journey.ipynb" style="border:1px solid var(--dim);color:var(--dim);padding:2px 8px;font-size:11px;text-decoration:none;display:inline-block" target="_blank">5 .ipynb</a>
+      <button onclick="setMode('archery')" id="btn-archery" class="locked">6 ARTEMIS</button>
     </div>
   </div>
   <div id="aesthetic-bar" class="settings-bar">
@@ -191,10 +213,11 @@ body{background:var(--bg);color:var(--fg);
     <button onclick="setAesthetic('curved')">curved</button>
     <button onclick="setAesthetic('negative')">negative</button>
     <button onclick="setAesthetic('familiar')">familiar</button>
+    <button onclick="setAesthetic('artemis')">artemis</button>
     <span class="bar-label" style="margin-left:8px">Aa</span>
     <button onclick="setFontSize(12)">12</button>
-    <button onclick="setFontSize(14)" class="active" data-group="size">14</button>
-    <button onclick="setFontSize(16)">16</button>
+    <button onclick="setFontSize(14)">14</button>
+    <button onclick="setFontSize(16)" class="active" data-group="size">16</button>
     <button onclick="setFontSize(18)">18</button>
     <button onclick="setFontSize(22)">22</button>
   </div>
@@ -218,6 +241,7 @@ body{background:var(--bg);color:var(--fg);
     <div id="surfer"><canvas id="surfer-canvas"></canvas></div>
     <div id="reader"></div>
     <div id="puzzle"></div>
+    <div id="archery"><canvas id="archery-canvas"></canvas></div>
   </div>
   <div id="footer">
     <span id="footer-phase">Phase 1/7</span>
@@ -228,5 +252,6 @@ body{background:var(--bg);color:var(--fg);
 
 <script src="content.js"></script>
 <script src="engine.js"></script>
+<script src="archery.js"></script>
 </body>
 </html>

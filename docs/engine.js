@@ -12,6 +12,7 @@ function setAesthetic(name) {
     b.classList.toggle("active", (b.textContent.trim() === (name || "wire")))
   );
   try { localStorage.setItem("rfe-aesthetic", name); } catch(e) {}
+  if (name === "artemis") unlockArchery();
 }
 // restore saved aesthetic
 try { const saved = localStorage.getItem("rfe-aesthetic");
@@ -62,6 +63,17 @@ try { const f = localStorage.getItem("rfe-fontface");
 let currentPhase = 0;
 let currentMode  = null;
 let phaseReached  = 0;   // highest phase unlocked
+let _archeryRAF   = null;
+let archeryUnlocked = false;
+try { if (localStorage.getItem("rfe-archery-unlocked") === "1") archeryUnlocked = true; } catch(e) {}
+
+function unlockArchery() {
+  if (archeryUnlocked) return;
+  archeryUnlocked = true;
+  try { localStorage.setItem("rfe-archery-unlocked", "1"); } catch(e) {}
+  const b = document.getElementById("btn-archery");
+  if (b) b.classList.remove("locked");
+}
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $stage     = document.getElementById("stage");
@@ -92,6 +104,7 @@ function updatePips() {
 function goPhase(i) {
   currentPhase = Math.max(0, Math.min(PHASES.length - 1, i));
   if (currentPhase > phaseReached) phaseReached = currentPhase;
+  if (phaseReached >= PHASES.length - 1) unlockArchery();
   updatePips();
   if (currentMode) setMode(currentMode);
 }
@@ -102,9 +115,10 @@ function advancePhase() {
 
 // ── mode switching ─────────────────────────────────────────────────────────
 function setMode(mode) {
+  if (mode === "archery" && !archeryUnlocked) return;
   currentMode = mode;
   // hide all
-  ["typewriter","surfer","reader","puzzle"].forEach(m => {
+  ["typewriter","surfer","reader","puzzle","archery"].forEach(m => {
     document.getElementById(m).style.display = "none";
   });
   document.querySelectorAll("#topbar .modes button").forEach(b => b.classList.remove("active"));
@@ -114,6 +128,7 @@ function setMode(mode) {
 
   // teardown
   if (_surferRAF) { cancelAnimationFrame(_surferRAF); _surferRAF = null; }
+  if (_archeryRAF) { cancelAnimationFrame(_archeryRAF); _archeryRAF = null; }
 
   // init
   switch (mode) {
@@ -121,6 +136,7 @@ function setMode(mode) {
     case "surfer":     initSurfer();     break;
     case "reader":     initReader();     break;
     case "puzzle":     initPuzzle();     break;
+    case "archery":    initArchery();    break;
   }
 }
 
@@ -556,6 +572,7 @@ function puzzleClick(i) {
     // second click dissolves
     puzzle.dissolved.add(i);
     renderPuzzle();
+    if (puzzle.dissolved.size >= PHASES.length) unlockArchery();
   }
 }
 
@@ -572,4 +589,8 @@ document.addEventListener("keydown", (e) => {
 
 // ── init ───────────────────────────────────────────────────────────────────
 updatePips();
+if (archeryUnlocked) {
+  const ab = document.getElementById("btn-archery");
+  if (ab) ab.classList.remove("locked");
+}
 setMode("reader");   // default mode
