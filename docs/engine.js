@@ -18,6 +18,46 @@ try { const saved = localStorage.getItem("rfe-aesthetic");
   if (saved !== null) setAesthetic(saved);
 } catch(e) {}
 
+// ── font size ─────────────────────────────────────────────────────────────
+const FONT_SIZES = [12, 14, 16, 18, 22];
+
+function setFontSize(size) {
+  document.documentElement.style.setProperty("--user-size", size + "px");
+  document.querySelectorAll("#aesthetic-bar button").forEach(b => {
+    if (FONT_SIZES.includes(+b.textContent)) {
+      b.classList.toggle("active", +b.textContent === size);
+    }
+  });
+  try { localStorage.setItem("rfe-fontsize", size); } catch(e) {}
+}
+try { const s = localStorage.getItem("rfe-fontsize");
+  if (s) setFontSize(+s);
+} catch(e) {}
+
+// ── font face ─────────────────────────────────────────────────────────────
+const FONT_FACES = {
+  "": "default", "Courier New": "Courier", "Consolas": "Consolas",
+  "Monaco": "Monaco", "Menlo": "Menlo", "SF Mono": "SF Mono",
+  "Fira Code": "Fira Code", "Source Code Pro": "Source Code Pro",
+  "JetBrains Mono": "JetBrains", "IBM Plex Mono": "IBM Plex"
+};
+
+function setFontFace(face) {
+  if (face) {
+    document.documentElement.style.setProperty("--user-face", `'${face}', monospace`);
+  } else {
+    document.documentElement.style.removeProperty("--user-face");
+  }
+  const label = FONT_FACES[face] ?? "default";
+  document.querySelectorAll("#font-bar button").forEach(b =>
+    b.classList.toggle("active", b.textContent.trim() === label)
+  );
+  try { localStorage.setItem("rfe-fontface", face); } catch(e) {}
+}
+try { const f = localStorage.getItem("rfe-fontface");
+  if (f !== null) setFontFace(f);
+} catch(e) {}
+
 // ── state ──────────────────────────────────────────────────────────────────
 let currentPhase = 0;
 let currentMode  = null;
@@ -235,6 +275,7 @@ function surferTouch(e) {
 }
 
 function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function _fontFace() { return _css("--user-face") || _css("--mono"); }
 
 function surferLoop() {
   const { ctx, W, H } = surf;
@@ -258,7 +299,7 @@ function surferLoop() {
 
   // ── scrolling text (the content) ──
   const _dim = _css("--dim"), _gridC = _css("--grid");
-  ctx.font = "13px " + _css("--mono");
+  ctx.font = "13px " + _fontFace();
   ctx.textAlign = "center";
   const textStartY = H + 40 - surf.scroll * 0.6;
   surf.lines.forEach((line, i) => {
@@ -314,7 +355,7 @@ function surferLoop() {
 
   // ── equation at top ──
   ctx.fillStyle = _accent;
-  ctx.font = "11px " + _css("--mono");
+  ctx.font = "11px " + _fontFace();
   ctx.textAlign = "left";
   ctx.fillText(surf.eq, 12, 18);
 
