@@ -1,0 +1,12 @@
+[submodule "ext/harmonics"]
+	path = ext/harmonics
+	url = https://github.com/nickjoven/harmonics.git
+[submodule "ext/proslambenomenos"]
+	path = ext/proslambenomenos
+	url = https://github.com/nickjoven/proslambenomenos.git
+[submodule "ext/submediant-site"]
+	path = ext/submediant-site
+	url = https://github.com/nickjoven/submediant-site.git
+[submodule "ext/intersections"]
+	path = ext/intersections
+	url = https://github.com/nickjoven/intersections.git
