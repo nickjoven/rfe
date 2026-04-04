@@ -161,6 +161,10 @@ body{background:var(--bg);color:var(--fg);
 #archery{display:none;height:100%;position:relative}
 #archery-canvas{width:100%;height:100%}
 
+/* ── field mode ───────────────────────────────────────────── */
+#field{display:none;height:100%;position:relative}
+#field-canvas{width:100%;height:100%}
+
 /* ── reader mode (press-to-continue + plant) ─────────────── */
 #reader{display:none;flex-direction:column;height:100%;padding:24px}
 #reader-plant{height:120px;display:flex;align-items:flex-end;justify-content:center;
@@ -176,19 +180,18 @@ body{background:var(--bg);color:var(--fg);
   padding:6px 16px;font-family:var(--mono);font-size:12px;cursor:pointer}
 #reader-choices button:hover{border-color:var(--accent);color:var(--accent)}
 
-/* ── puzzle mode ─────────────────────────────────────────── */
-#puzzle{display:none;flex-direction:column;height:100%;padding:24px}
-#puzzle-grid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+/* ── puzzle mode (equation audit) ───────────────────────── */
+#puzzle{display:none;flex-direction:column;height:100%;padding:24px;overflow-y:auto}
+#puzzle-grid{display:flex;flex-direction:column;align-items:center;gap:12px;padding-bottom:24px}
 .puzzle-card{
-  border:1px solid var(--dim);padding:16px 24px;max-width:600px;width:100%;
-  cursor:pointer;transition:all .3s;border-radius:var(--radius)}
+  border:1px solid var(--dim);padding:12px 20px;max-width:640px;width:100%;
+  transition:all .3s;border-radius:var(--radius)}
 .puzzle-card:hover{border-color:var(--accent)}
-.puzzle-card.dissolved{border-color:var(--ok-dim);color:var(--ok);opacity:.6}
-.puzzle-card .assumption{font-size:13px;color:var(--fg)}
-.puzzle-card .challenge{font-size:11px;color:var(--dim);margin-top:8px;display:none}
-.puzzle-card.revealed .challenge{display:block}
-.puzzle-card.dissolved .challenge{color:var(--ok)}
-#puzzle-status{text-align:center;padding:8px;font-size:12px;color:var(--dim)}
+.puzzle-card.dissolved{border-color:var(--ok-dim);opacity:.7}
+.puzzle-term{transition:all .15s !important}
+.puzzle-term:hover{box-shadow:var(--glow)}
+.puzzle-term.wrong{text-decoration:line-through}
+#puzzle-status{text-align:center;padding:8px 8px 16px;font-size:12px;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -202,6 +205,7 @@ body{background:var(--bg);color:var(--fg);
       <button onclick="setMode('puzzle')" id="btn-puzzle">4 PUZZLE</button>
       <a href="rfe_journey.ipynb" style="border:1px solid var(--dim);color:var(--dim);padding:2px 8px;font-size:11px;text-decoration:none;display:inline-block" target="_blank">5 .ipynb</a>
       <button onclick="setMode('archery')" id="btn-archery" class="locked">6 ARTEMIS</button>
+      <button onclick="setMode('field')" id="btn-field" class="locked">7 FIELD</button>
     </div>
   </div>
   <div id="aesthetic-bar" class="settings-bar">
@@ -242,6 +246,7 @@ body{background:var(--bg);color:var(--fg);
     <div id="reader"></div>
     <div id="puzzle"></div>
     <div id="archery"><canvas id="archery-canvas"></canvas></div>
+    <div id="field"><canvas id="field-canvas"></canvas></div>
   </div>
   <div id="footer">
     <span id="footer-phase">Phase 1/7</span>
@@ -253,5 +258,6 @@ body{background:var(--bg);color:var(--fg);
 <script src="content.js"></script>
 <script src="engine.js"></script>
 <script src="archery.js"></script>
+<script src="field.js"></script>
 </body>
 </html>

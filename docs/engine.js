@@ -74,6 +74,8 @@ function unlockArchery() {
   try { localStorage.setItem("rfe-archery-unlocked", "1"); } catch(e) {}
   const b = document.getElementById("btn-archery");
   if (b) b.classList.remove("locked");
+  const bf = document.getElementById("btn-field");
+  if (bf) bf.classList.remove("locked");
 }
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -117,9 +119,10 @@ function advancePhase() {
 // ── mode switching ─────────────────────────────────────────────────────────
 function setMode(mode) {
   if (mode === "archery" && !archeryUnlocked) return;
+  if (mode === "field" && !archeryUnlocked) return;
   currentMode = mode;
   // hide all
-  ["typewriter","bricks","reader","puzzle","archery"].forEach(m => {
+  ["typewriter","bricks","reader","puzzle","archery","field"].forEach(m => {
     document.getElementById(m).style.display = "none";
   });
   document.querySelectorAll("#topbar .modes button").forEach(b => b.classList.remove("active"));
@@ -131,6 +134,7 @@ function setMode(mode) {
   document.onkeydown = null;
   if (_bricksRAF) { cancelAnimationFrame(_bricksRAF); _bricksRAF = null; }
   if (_archeryRAF) { cancelAnimationFrame(_archeryRAF); _archeryRAF = null; }
+  if (_fieldRAF) { cancelAnimationFrame(_fieldRAF); _fieldRAF = null; }
 
   // init
   switch (mode) {
@@ -139,6 +143,7 @@ function setMode(mode) {
     case "reader":     initReader();     break;
     case "puzzle":     initPuzzle();     break;
     case "archery":    initArchery();    break;
+    case "field":      initField();      break;
   }
 }
 
@@ -236,6 +241,8 @@ let bk = {};
 
 function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 function _fontFace() { return _css("--user-face") || _css("--mono"); }
+// scale factor for canvas text based on user font size preference (base 16)
+function _canvasScale() { var s = parseInt(_css("--user-size")) || 16; return Math.max(0.75, Math.min(1.5, s / 16)); }
 
 // key concepts per phase for brick labels
 const BRICK_CONCEPTS = [
@@ -289,11 +296,25 @@ function initBricks() {
     gravity: [0, 0.008 * currentPhase],
     phaseComplete: false,
     revealed: [],
+    // gravity-assist: effects spawned by destroyed bricks
+    wells: [],       // {x, y, strength, life, maxLife, label}
+    attractors: [],  // {x, y, strength, life, maxLife, label}
+    repulsors: [],   // {x, y, strength, life, maxLife, label}
+    oscillators: [], // {x, y, amp, freq, phase, life, maxLife, label}
+    trail: [],       // ball trail for geodesic visualization
+    maxTrail: 120,
+    // intro splash for first-time orientation
+    showIntro: !bk._hasPlayed,
+    introTime: 0,
   };
+  bk._hasPlayed = true;
 
   canvas.onmousemove = bricksMouseMove;
   canvas.ontouchmove = function(e) { e.preventDefault(); bricksMouseMove(e.touches[0]); };
-  canvas.onclick = function() { if (!bk.launched) launchBall(); };
+  canvas.onclick = function() {
+    if (bk.showIntro) { bk.showIntro = false; return; }
+    if (!bk.launched) launchBall();
+  };
   document.onkeydown = bricksKey;
 
   bricksLoop();
@@ -315,12 +336,212 @@ function bricksMouseMove(e) {
 
 function bricksKey(e) {
   if (currentMode !== "bricks") return;
+  if (bk.showIntro && (e.key === " " || e.key === "Enter")) {
+    e.preventDefault(); bk.showIntro = false; return;
+  }
   if (e.key === "ArrowLeft")  bk.paddleX = Math.max(bk.paddleW/2, bk.paddleX - 24);
   if (e.key === "ArrowRight") bk.paddleX = Math.min(bk.W - bk.paddleW/2, bk.paddleX + 24);
   if (e.key === " " && !bk.launched) { e.preventDefault(); launchBall(); }
   if (e.key === "Tab") { e.preventDefault(); advancePhase(); }
   if (e.key === "r") initBricks();
   if (!bk.launched) bk.ballX = bk.paddleX;
+}
+
+// ── gravity-assist effects ─────────────────────────────────────────────────
+// Map concept labels to physics effects when their brick is destroyed
+
+var EFFECT_MAP = {
+  // attractors: pull the ball toward this point
+  "\u03c6": "attractor", "golden ratio": "attractor", "fixed point": "attractor",
+  "x = f(x)": "attractor", "x\u00b2-x-1=0": "attractor", "\u03c6\u00b7\u03c8=1": "attractor",
+  "self-consistent": "attractor", "fixed point": "attractor",
+  // gravity wells: bend the ball's path (like slingshot)
+  "1/q\u00b2": "well", "curvature": "well", "G\u03bcv": "well",
+  "coupling K": "well", "gravity": "well", "MOND": "well",
+  "dark energy": "well", "\u03a9_\u039b=0.684": "well",
+  // repulsors: push ball away
+  "observer": "repulsor", "dissolution": "repulsor",
+  "no free params": "repulsor",
+  // oscillators: sinusoidal force region
+  "resonance": "oscillator", "synchronize": "oscillator",
+  "phase lock": "oscillator", "Kuramoto": "oscillator",
+  "Arnold tongue": "oscillator", "\u0394\u03b8": "oscillator",
+  "U(1)": "oscillator",
+};
+
+function brickSpawnEffect(brick) {
+  var cx = brick.x + brick.w / 2;
+  var cy = brick.y + brick.h / 2;
+  var life = 600; // ~10 seconds at 60fps
+  var type = EFFECT_MAP[brick.label];
+  if (!type) {
+    // default: mild well for any unrecognized concept
+    type = "well";
+    life = 300;
+  }
+  switch (type) {
+    case "attractor":
+      bk.attractors.push({x: cx, y: cy, strength: 0.15, life: life, maxLife: life, label: brick.label});
+      break;
+    case "well":
+      bk.wells.push({x: cx, y: cy, strength: 0.08, life: life, maxLife: life, label: brick.label});
+      break;
+    case "repulsor":
+      bk.repulsors.push({x: cx, y: cy, strength: 0.12, life: life, maxLife: life, label: brick.label});
+      break;
+    case "oscillator":
+      bk.oscillators.push({x: cx, y: cy, amp: 0.2, freq: 0.06, phase: 0, life: life, maxLife: life, label: brick.label});
+      break;
+  }
+}
+
+function brickForces() {
+  // apply forces from active effects to ball
+  var fx = 0, fy = 0;
+
+  bk.wells.forEach(function(w) {
+    var dx = w.x - bk.ballX, dy = w.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 10) {
+      var fade = w.life / w.maxLife;
+      var s = w.strength * fade / Math.max(d * 0.02, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.attractors.forEach(function(a) {
+    var dx = a.x - bk.ballX, dy = a.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 8) {
+      var fade = a.life / a.maxLife;
+      var s = a.strength * fade / Math.max(d * 0.015, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.repulsors.forEach(function(r) {
+    var dx = bk.ballX - r.x, dy = bk.ballY - r.y;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 8 && d < 200) {
+      var fade = r.life / r.maxLife;
+      var s = r.strength * fade / Math.max(d * 0.02, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.oscillators.forEach(function(o) {
+    var dx = o.x - bk.ballX, dy = o.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d < 150) {
+      var fade = o.life / o.maxLife;
+      var wave = Math.sin(o.phase) * o.amp * fade * (1 - d / 150);
+      fy += wave;
+    }
+  });
+
+  bk.ballVX += fx;
+  bk.ballVY += fy;
+}
+
+function tickEffects() {
+  // age and remove expired effects
+  function tick(arr) {
+    for (var i = arr.length - 1; i >= 0; i--) {
+      arr[i].life--;
+      if (arr[i].phase !== undefined) arr[i].phase += arr[i].freq;
+      if (arr[i].life <= 0) arr.splice(i, 1);
+    }
+  }
+  tick(bk.wells); tick(bk.attractors); tick(bk.repulsors); tick(bk.oscillators);
+}
+
+function drawEffects(ctx, W, H) {
+  var accent = _css("--accent"), ok = _css("--ok");
+  var err = _css("--err"), dim = _css("--dim");
+  var font = _fontFace();
+
+  // ball trail (geodesic visualization)
+  if (bk.trail.length > 1) {
+    for (var i = 1; i < bk.trail.length; i++) {
+      ctx.globalAlpha = (i / bk.trail.length) * 0.25;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(bk.trail[i - 1].x, bk.trail[i - 1].y);
+      ctx.lineTo(bk.trail[i].x, bk.trail[i].y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // wells: concentric rings
+  bk.wells.forEach(function(w) {
+    var fade = w.life / w.maxLife;
+    ctx.strokeStyle = accent; ctx.lineWidth = 0.5;
+    [20, 40, 65].forEach(function(r) {
+      ctx.globalAlpha = 0.08 * fade;
+      ctx.beginPath(); ctx.arc(w.x, w.y, r, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.globalAlpha = fade * 0.5;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(w.x, w.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // attractors: pulsing dot + rings
+  bk.attractors.forEach(function(a) {
+    var fade = a.life / a.maxLife;
+    var pulse = 1 + 0.15 * Math.sin(a.life * 0.1);
+    ctx.strokeStyle = ok; ctx.lineWidth = 0.8;
+    [15, 30, 50].forEach(function(r) {
+      ctx.globalAlpha = 0.12 * fade;
+      ctx.beginPath(); ctx.arc(a.x, a.y, r * pulse, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.globalAlpha = fade * 0.7;
+    ctx.fillStyle = ok;
+    ctx.beginPath(); ctx.arc(a.x, a.y, 4 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "8px " + font; ctx.textAlign = "center";
+    ctx.fillText(a.label, a.x, a.y - 10);
+    ctx.globalAlpha = 1;
+  });
+
+  // repulsors: outward rays
+  bk.repulsors.forEach(function(r) {
+    var fade = r.life / r.maxLife;
+    ctx.strokeStyle = err; ctx.lineWidth = 0.5;
+    for (var a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+      ctx.globalAlpha = 0.15 * fade;
+      ctx.beginPath();
+      ctx.moveTo(r.x + 6 * Math.cos(a), r.y + 6 * Math.sin(a));
+      ctx.lineTo(r.x + (25 + 10 * Math.sin(r.life * 0.08)) * Math.cos(a),
+                 r.y + (25 + 10 * Math.sin(r.life * 0.08)) * Math.sin(a));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = fade * 0.5;
+    ctx.fillStyle = err;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // oscillators: wave rings
+  bk.oscillators.forEach(function(o) {
+    var fade = o.life / o.maxLife;
+    var wave = Math.sin(o.phase);
+    ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.12 * fade;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 30 + 20 * Math.abs(wave), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.08 * fade;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 60 + 30 * Math.abs(wave), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = fade * 0.4;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(o.x, o.y, 3 + 2 * Math.abs(wave), 0, Math.PI * 2); ctx.fill();
+    ctx.font = "8px " + font; ctx.textAlign = "center";
+    ctx.fillText(o.label, o.x, o.y - 10);
+    ctx.globalAlpha = 1;
+  });
 }
 
 function bricksLoop() {
@@ -337,12 +558,42 @@ function bricksLoop() {
   for (var y = 50; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
   for (var x = 50; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
 
+  // ── intro splash ──
+  if (bk.showIntro) {
+    bk.introTime++;
+    var phase = PHASES[currentPhase];
+    ctx.textAlign = "center";
+    ctx.fillStyle = accent; ctx.font = "bold 18px " + font;
+    ctx.fillText("\u00a7" + (currentPhase + 1) + "  " + phase.title, W / 2, H * 0.28);
+    ctx.fillStyle = fg; ctx.font = "13px " + font;
+    ctx.fillText("Break the bricks. Each concept becomes a force.", W / 2, H * 0.38);
+    ctx.fillStyle = accent; ctx.font = "12px " + font;
+    ctx.fillText(phase.equation, W / 2, H * 0.48);
+    ctx.fillStyle = dim; ctx.font = "11px " + font;
+    ctx.fillText("mouse / arrows: move paddle    SPACE / click: launch ball", W / 2, H * 0.60);
+    ctx.fillText("broken bricks spawn gravity wells, attractors, and wave fields", W / 2, H * 0.66);
+    if (bk.introTime > 30) {
+      ctx.fillStyle = accent; ctx.font = "12px " + font;
+      ctx.fillText("click or SPACE to begin", W / 2, H * 0.80);
+    }
+    _bricksRAF = requestAnimationFrame(bricksLoop);
+    return;
+  }
+
+  // draw active effects (behind ball)
+  drawEffects(ctx, W, H);
+
   // ball physics
   if (bk.launched) {
     bk.ballVX += bk.gravity[0];
     bk.ballVY += bk.gravity[1];
+    brickForces();
     bk.ballX += bk.ballVX;
     bk.ballY += bk.ballVY;
+    // trail for geodesic viz
+    bk.trail.push({x: bk.ballX, y: bk.ballY});
+    if (bk.trail.length > bk.maxTrail) bk.trail.shift();
+    tickEffects();
 
     // wall bounces
     if (bk.ballX - bk.ballR < 0) { bk.ballX = bk.ballR; bk.ballVX = Math.abs(bk.ballVX); }
@@ -369,10 +620,12 @@ function bricksLoop() {
       bk.ballX = bk.paddleX;
       bk.ballY = bk.paddleY - 12;
       bk.ballVX = 0; bk.ballVY = 0;
+      bk.trail = [];
       if (bk.lives <= 0) {
         bk.bricks.forEach(function(b) { b.alive = true; });
         bk.lives = 3;
         bk.revealed = [];
+        bk.wells = []; bk.attractors = []; bk.repulsors = []; bk.oscillators = [];
       }
     }
 
@@ -383,6 +636,7 @@ function bricksLoop() {
           bk.ballY + bk.ballR > b.y && bk.ballY - bk.ballR < b.y + b.h) {
         b.alive = false; b.flash = 30;
         bk.revealed.push(b.label);
+        brickSpawnEffect(b);
         var dx = bk.ballX - (b.x + b.w/2);
         var dy = bk.ballY - (b.y + b.h/2);
         if (Math.abs(dx / b.w) > Math.abs(dy / b.h)) bk.ballVX = -bk.ballVX;
@@ -436,8 +690,9 @@ function bricksLoop() {
   ctx.fillStyle = accent; ctx.font = "11px " + font; ctx.textAlign = "left";
   ctx.fillText(bk.eq, 12, 18);
   var alive = bk.bricks.filter(function(b){return b.alive;}).length;
+  var nEffects = bk.wells.length + bk.attractors.length + bk.repulsors.length + bk.oscillators.length;
   ctx.textAlign = "right"; ctx.fillStyle = dim;
-  ctx.fillText("bricks: " + alive + "  lives: " + bk.lives, W - 12, 18);
+  ctx.fillText("bricks: " + alive + "  lives: " + bk.lives + (nEffects ? "  fields: " + nEffects : ""), W - 12, 18);
   if (!bk.launched) {
     ctx.textAlign = "center"; ctx.fillStyle = dim; ctx.font = "11px " + font;
     ctx.fillText("SPACE or click to launch", W/2, H - 8);
@@ -580,47 +835,133 @@ function renderPlant(progress) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODE 4: PUZZLE
+// MODE 4: PUZZLE — Equation Audit
+// Identify the free parameter / arbitrary normalization in each equation.
+// Click the problematic term to dissolve it; see the RFE replacement.
 // ═══════════════════════════════════════════════════════════════════════════
 
-let puzzle = { dissolved: new Set() };
+// Each audit: equation terms, which index is the normalization, and the fix
+const EQUATION_AUDITS = [
+  { // Phase 1: Fixed Points
+    title: "Fixed Points",
+    eq: "Parameters are inputs from experiment",
+    terms: ["masses m\u1d62", "couplings g\u1d62", "free parameters", "boundary conditions"],
+    answer: 2,
+    hint: "Which of these is assumed, not derived?",
+    fix: "Parameters are fixed points of x = f(x). The golden ratio \u03c6 is not measured \u2014 it is the unique solution.",
+  },
+  { // Phase 2: Rational Approximation
+    title: "Rational Approximation",
+    eq: "Fields are real-valued: \u03c6 \u2208 \u211d",
+    terms: ["real numbers \u211d", "continuum limit", "dense subset \u211a", "Lebesgue measure"],
+    answer: 0,
+    hint: "Which domain assumption hides the structure of resonance?",
+    fix: "Resonance only locks at rationals p/q. The Stern-Brocot tree is the natural basis \u2014 \u211d is the continuum limit, not the foundation.",
+  },
+  { // Phase 3: Synchronization
+    title: "Synchronization",
+    eq: "U(1) \u00d7 SU(2) \u00d7 SU(3) with independent couplings",
+    terms: ["U(1) coupling e", "SU(2) coupling g", "SU(3) coupling g\u209b", "independent couplings"],
+    answer: 3,
+    hint: "What makes the Standard Model need three separate gauge groups?",
+    fix: "All forces are Arnold tongues at different p/q on one tree with one coupling K. Three groups \u2192 three tongues.",
+  },
+  { // Phase 4: Field Equation
+    title: "The Field Equation",
+    eq: "Inflation: V(\u03c6) = V\u2080(1 \u2212 e^{\u2212\u221a(2/3)\u03c6})\u00b2",
+    terms: ["inflaton field \u03c6", "slow-roll potential V(\u03c6)", "initial amplitude V\u2080", "e-folding count N"],
+    answer: 1,
+    hint: "Which element is postulated rather than derived?",
+    fix: "Scale invariance emerges at the fixed point of N = N\u00b7g\u00b7w. No inflaton needed. The tilt n\u209b = 0.965 comes from tree geometry.",
+  },
+  { // Phase 5: Observables
+    title: "Observables",
+    eq: "\u039b = 10\u00b2\u00b9 \u00d7 \u039b_observed (the cosmological constant problem)",
+    terms: ["\u039b (cosmological constant)", "UV cutoff M\u209a\u2074", "vacuum energy \u27e8\u03c1\u27e9", "fine-tuning 10\u207b\u00b9\u00b2\u2070"],
+    answer: 3,
+    hint: "Which step introduces the 120 orders of magnitude?",
+    fix: "\u03a9_\u039b = 13/19 = 0.684. No cutoff, no fine-tuning. The ratio is a tree coordinate, not a cancellation.",
+  },
+  { // Phase 6: Continuum Limit
+    title: "The Continuum Limit",
+    eq: "S = \u222b(\u00bd R \u2212 \u039b) \u221ag d\u2074x  (Einstein-Hilbert action)",
+    terms: ["\u221ag (metric determinant)", "Ricci scalar R", "least action principle \u03b4S = 0", "\u039b (cosmological constant)"],
+    answer: 2,
+    hint: "Which principle is postulated axiomatically rather than derived?",
+    fix: "The metric IS the order parameter. Curvature IS tongue density. G\u03bcv = 8\u03c0T\u03bcv follows from self-consistency at K = 1.",
+  },
+  { // Phase 7: Dissolution
+    title: "Dissolution",
+    eq: "Physics needs new particles / dimensions / principles",
+    terms: ["dark matter particles", "extra dimensions", "new symmetry principles", "separate normalizations"],
+    answer: 3,
+    hint: "What creates the apparent need for all the others?",
+    fix: "Remove separate normalizations \u2192 one equation, one tree, one coupling. The anomalies dissolve. \u03c6 \u00b7 \u03c8 = 1.",
+  },
+];
+
+let puzzle = { dissolved: new Set(), wrong: {} };
 
 function initPuzzle() {
   const $p = document.getElementById("puzzle");
   $p.style.display = "flex";
+  puzzle.wrong = {};
   renderPuzzle();
 }
 
 function renderPuzzle() {
   const $p = document.getElementById("puzzle");
   const dissolved = puzzle.dissolved.size;
+  const total = EQUATION_AUDITS.length;
 
   $p.innerHTML = `
     <div id="puzzle-status">
-      Anomalies dissolved: ${dissolved}/${PHASES.length} — click an assumption to challenge it
+      Normalizations dissolved: ${dissolved}/${total} — find the arbitrary term in each equation
     </div>
     <div id="puzzle-grid">
-      ${PHASES.map((ph, i) => {
+      ${EQUATION_AUDITS.map((audit, i) => {
         const isDissolved = puzzle.dissolved.has(i);
-        const isRevealed  = isDissolved; // could add intermediate state
+        const wrongSet = puzzle.wrong[i] || new Set();
         return `
-          <div class="puzzle-card ${isDissolved ? "dissolved" : ""} ${isRevealed ? "revealed" : ""}"
-               onclick="puzzleClick(${i})" data-idx="${i}">
+          <div class="puzzle-card ${isDissolved ? "dissolved" : ""}" data-idx="${i}">
             <div style="font-size:10px;color:var(--dim);margin-bottom:4px">
-              §${i+1} ${ph.title} · <em>${ph.repo}</em>
+              §${i+1} ${audit.title}
             </div>
-            <div class="assumption">
-              ${isDissolved ? "✓ " : "▸ "}${escHtml(ph.assumption)}
+            <div class="puzzle-eq" style="font-size:12px;margin-bottom:6px;color:var(--fg)">
+              ${escHtml(audit.eq)}
             </div>
-            <div class="challenge">
-              → ${escHtml(ph.challenge)}
-            </div>
+            ${isDissolved ? `
+              <div class="puzzle-fix" style="font-size:11px;color:var(--ok);margin-top:4px">
+                ✓ ${escHtml(audit.fix)}
+              </div>
+            ` : `
+              <div class="puzzle-hint" style="font-size:10px;color:var(--dim);margin-bottom:6px;font-style:italic">
+                ${escHtml(audit.hint)}
+              </div>
+              <div class="puzzle-terms" style="display:flex;flex-wrap:wrap;gap:6px">
+                ${audit.terms.map((t, ti) => {
+                  const isWrong = wrongSet.has(ti);
+                  return `<button class="puzzle-term ${isWrong ? "wrong" : ""}"
+                    onclick="puzzleTermClick(${i},${ti})"
+                    style="background:none;border:1px solid ${isWrong ? "var(--err)" : "var(--dim)"};
+                    color:${isWrong ? "var(--err)" : "var(--fg)"};padding:3px 10px;
+                    font-family:var(--mono);font-size:11px;cursor:pointer;
+                    border-radius:var(--radius);opacity:${isWrong ? "0.4" : "1"};
+                    ${isWrong ? "pointer-events:none;" : ""}
+                    transition:all .15s"
+                    onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+                    onmouseout="this.style.borderColor='${isWrong ? "var(--err)" : "var(--dim)"}';this.style.color='${isWrong ? "var(--err)" : "var(--fg)"}'">
+                    ${escHtml(t)}
+                  </button>`;
+                }).join("")}
+              </div>
+            `}
           </div>`;
       }).join("")}
     </div>
-    ${dissolved === PHASES.length ? `
+    ${dissolved === total ? `
       <div style="text-align:center;padding:16px;color:var(--accent)">
-        All anomalies dissolved. φ · ψ = 1.
+        All normalizations dissolved. The map contains the territory. \u03c6 \u00b7 \u03c8 = 1.
       </div>` : ""}
   `;
 
@@ -629,19 +970,20 @@ function renderPuzzle() {
   };
 }
 
-function puzzleClick(i) {
-  const card = document.querySelector(`.puzzle-card[data-idx="${i}"]`);
-  if (puzzle.dissolved.has(i)) return;
+function puzzleTermClick(phaseIdx, termIdx) {
+  if (puzzle.dissolved.has(phaseIdx)) return;
+  const audit = EQUATION_AUDITS[phaseIdx];
 
-  if (!card.classList.contains("revealed")) {
-    card.classList.add("revealed");
-    card.querySelector(".challenge").style.display = "block";
+  if (termIdx === audit.answer) {
+    // correct — dissolve
+    puzzle.dissolved.add(phaseIdx);
+    if (puzzle.dissolved.size >= EQUATION_AUDITS.length) unlockArchery();
   } else {
-    // second click dissolves
-    puzzle.dissolved.add(i);
-    renderPuzzle();
-    if (puzzle.dissolved.size >= PHASES.length) unlockArchery();
+    // wrong — mark this term
+    if (!puzzle.wrong[phaseIdx]) puzzle.wrong[phaseIdx] = new Set();
+    puzzle.wrong[phaseIdx].add(termIdx);
   }
+  renderPuzzle();
 }
 
 // ── utils ──────────────────────────────────────────────────────────────────
@@ -660,5 +1002,7 @@ updatePips();
 if (archeryUnlocked) {
   const ab = document.getElementById("btn-archery");
   if (ab) ab.classList.remove("locked");
+  const fb = document.getElementById("btn-field");
+  if (fb) fb.classList.remove("locked");
 }
 setMode("bricks");   // default mode
