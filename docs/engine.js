@@ -294,6 +294,13 @@ function initBricks() {
     gravity: [0, 0.008 * currentPhase],
     phaseComplete: false,
     revealed: [],
+    // gravity-assist: effects spawned by destroyed bricks
+    wells: [],       // {x, y, strength, life, maxLife, label}
+    attractors: [],  // {x, y, strength, life, maxLife, label}
+    repulsors: [],   // {x, y, strength, life, maxLife, label}
+    oscillators: [], // {x, y, amp, freq, phase, life, maxLife, label}
+    trail: [],       // ball trail for geodesic visualization
+    maxTrail: 120,
   };
 
   canvas.onmousemove = bricksMouseMove;
@@ -328,6 +335,203 @@ function bricksKey(e) {
   if (!bk.launched) bk.ballX = bk.paddleX;
 }
 
+// ── gravity-assist effects ─────────────────────────────────────────────────
+// Map concept labels to physics effects when their brick is destroyed
+
+var EFFECT_MAP = {
+  // attractors: pull the ball toward this point
+  "\u03c6": "attractor", "golden ratio": "attractor", "fixed point": "attractor",
+  "x = f(x)": "attractor", "x\u00b2-x-1=0": "attractor", "\u03c6\u00b7\u03c8=1": "attractor",
+  "self-consistent": "attractor", "fixed point": "attractor",
+  // gravity wells: bend the ball's path (like slingshot)
+  "1/q\u00b2": "well", "curvature": "well", "G\u03bcv": "well",
+  "coupling K": "well", "gravity": "well", "MOND": "well",
+  "dark energy": "well", "\u03a9_\u039b=0.684": "well",
+  // repulsors: push ball away
+  "observer": "repulsor", "dissolution": "repulsor",
+  "no free params": "repulsor",
+  // oscillators: sinusoidal force region
+  "resonance": "oscillator", "synchronize": "oscillator",
+  "phase lock": "oscillator", "Kuramoto": "oscillator",
+  "Arnold tongue": "oscillator", "\u0394\u03b8": "oscillator",
+  "U(1)": "oscillator",
+};
+
+function brickSpawnEffect(brick) {
+  var cx = brick.x + brick.w / 2;
+  var cy = brick.y + brick.h / 2;
+  var life = 600; // ~10 seconds at 60fps
+  var type = EFFECT_MAP[brick.label];
+  if (!type) {
+    // default: mild well for any unrecognized concept
+    type = "well";
+    life = 300;
+  }
+  switch (type) {
+    case "attractor":
+      bk.attractors.push({x: cx, y: cy, strength: 0.15, life: life, maxLife: life, label: brick.label});
+      break;
+    case "well":
+      bk.wells.push({x: cx, y: cy, strength: 0.08, life: life, maxLife: life, label: brick.label});
+      break;
+    case "repulsor":
+      bk.repulsors.push({x: cx, y: cy, strength: 0.12, life: life, maxLife: life, label: brick.label});
+      break;
+    case "oscillator":
+      bk.oscillators.push({x: cx, y: cy, amp: 0.2, freq: 0.06, phase: 0, life: life, maxLife: life, label: brick.label});
+      break;
+  }
+}
+
+function brickForces() {
+  // apply forces from active effects to ball
+  var fx = 0, fy = 0;
+
+  bk.wells.forEach(function(w) {
+    var dx = w.x - bk.ballX, dy = w.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 10) {
+      var fade = w.life / w.maxLife;
+      var s = w.strength * fade / Math.max(d * 0.02, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.attractors.forEach(function(a) {
+    var dx = a.x - bk.ballX, dy = a.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 8) {
+      var fade = a.life / a.maxLife;
+      var s = a.strength * fade / Math.max(d * 0.015, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.repulsors.forEach(function(r) {
+    var dx = bk.ballX - r.x, dy = bk.ballY - r.y;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d > 8 && d < 200) {
+      var fade = r.life / r.maxLife;
+      var s = r.strength * fade / Math.max(d * 0.02, 1);
+      fx += s * dx / d; fy += s * dy / d;
+    }
+  });
+
+  bk.oscillators.forEach(function(o) {
+    var dx = o.x - bk.ballX, dy = o.y - bk.ballY;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    if (d < 150) {
+      var fade = o.life / o.maxLife;
+      var wave = Math.sin(o.phase) * o.amp * fade * (1 - d / 150);
+      fy += wave;
+    }
+  });
+
+  bk.ballVX += fx;
+  bk.ballVY += fy;
+}
+
+function tickEffects() {
+  // age and remove expired effects
+  function tick(arr) {
+    for (var i = arr.length - 1; i >= 0; i--) {
+      arr[i].life--;
+      if (arr[i].phase !== undefined) arr[i].phase += arr[i].freq;
+      if (arr[i].life <= 0) arr.splice(i, 1);
+    }
+  }
+  tick(bk.wells); tick(bk.attractors); tick(bk.repulsors); tick(bk.oscillators);
+}
+
+function drawEffects(ctx, W, H) {
+  var accent = _css("--accent"), ok = _css("--ok");
+  var err = _css("--err"), dim = _css("--dim");
+  var font = _fontFace();
+
+  // ball trail (geodesic visualization)
+  if (bk.trail.length > 1) {
+    for (var i = 1; i < bk.trail.length; i++) {
+      ctx.globalAlpha = (i / bk.trail.length) * 0.25;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(bk.trail[i - 1].x, bk.trail[i - 1].y);
+      ctx.lineTo(bk.trail[i].x, bk.trail[i].y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // wells: concentric rings
+  bk.wells.forEach(function(w) {
+    var fade = w.life / w.maxLife;
+    ctx.strokeStyle = accent; ctx.lineWidth = 0.5;
+    [20, 40, 65].forEach(function(r) {
+      ctx.globalAlpha = 0.08 * fade;
+      ctx.beginPath(); ctx.arc(w.x, w.y, r, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.globalAlpha = fade * 0.5;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(w.x, w.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // attractors: pulsing dot + rings
+  bk.attractors.forEach(function(a) {
+    var fade = a.life / a.maxLife;
+    var pulse = 1 + 0.15 * Math.sin(a.life * 0.1);
+    ctx.strokeStyle = ok; ctx.lineWidth = 0.8;
+    [15, 30, 50].forEach(function(r) {
+      ctx.globalAlpha = 0.12 * fade;
+      ctx.beginPath(); ctx.arc(a.x, a.y, r * pulse, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.globalAlpha = fade * 0.7;
+    ctx.fillStyle = ok;
+    ctx.beginPath(); ctx.arc(a.x, a.y, 4 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "8px " + font; ctx.textAlign = "center";
+    ctx.fillText(a.label, a.x, a.y - 10);
+    ctx.globalAlpha = 1;
+  });
+
+  // repulsors: outward rays
+  bk.repulsors.forEach(function(r) {
+    var fade = r.life / r.maxLife;
+    ctx.strokeStyle = err; ctx.lineWidth = 0.5;
+    for (var a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+      ctx.globalAlpha = 0.15 * fade;
+      ctx.beginPath();
+      ctx.moveTo(r.x + 6 * Math.cos(a), r.y + 6 * Math.sin(a));
+      ctx.lineTo(r.x + (25 + 10 * Math.sin(r.life * 0.08)) * Math.cos(a),
+                 r.y + (25 + 10 * Math.sin(r.life * 0.08)) * Math.sin(a));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = fade * 0.5;
+    ctx.fillStyle = err;
+    ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // oscillators: wave rings
+  bk.oscillators.forEach(function(o) {
+    var fade = o.life / o.maxLife;
+    var wave = Math.sin(o.phase);
+    ctx.strokeStyle = accent; ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.12 * fade;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 30 + 20 * Math.abs(wave), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.08 * fade;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 60 + 30 * Math.abs(wave), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = fade * 0.4;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(o.x, o.y, 3 + 2 * Math.abs(wave), 0, Math.PI * 2); ctx.fill();
+    ctx.font = "8px " + font; ctx.textAlign = "center";
+    ctx.fillText(o.label, o.x, o.y - 10);
+    ctx.globalAlpha = 1;
+  });
+}
+
 function bricksLoop() {
   var ctx = bk.ctx, W = bk.W, H = bk.H;
   var accent = _css("--accent"), dim = _css("--dim");
@@ -342,12 +546,20 @@ function bricksLoop() {
   for (var y = 50; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
   for (var x = 50; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
 
+  // draw active effects (behind ball)
+  drawEffects(ctx, W, H);
+
   // ball physics
   if (bk.launched) {
     bk.ballVX += bk.gravity[0];
     bk.ballVY += bk.gravity[1];
+    brickForces();
     bk.ballX += bk.ballVX;
     bk.ballY += bk.ballVY;
+    // trail for geodesic viz
+    bk.trail.push({x: bk.ballX, y: bk.ballY});
+    if (bk.trail.length > bk.maxTrail) bk.trail.shift();
+    tickEffects();
 
     // wall bounces
     if (bk.ballX - bk.ballR < 0) { bk.ballX = bk.ballR; bk.ballVX = Math.abs(bk.ballVX); }
@@ -374,10 +586,12 @@ function bricksLoop() {
       bk.ballX = bk.paddleX;
       bk.ballY = bk.paddleY - 12;
       bk.ballVX = 0; bk.ballVY = 0;
+      bk.trail = [];
       if (bk.lives <= 0) {
         bk.bricks.forEach(function(b) { b.alive = true; });
         bk.lives = 3;
         bk.revealed = [];
+        bk.wells = []; bk.attractors = []; bk.repulsors = []; bk.oscillators = [];
       }
     }
 
@@ -388,6 +602,7 @@ function bricksLoop() {
           bk.ballY + bk.ballR > b.y && bk.ballY - bk.ballR < b.y + b.h) {
         b.alive = false; b.flash = 30;
         bk.revealed.push(b.label);
+        brickSpawnEffect(b);
         var dx = bk.ballX - (b.x + b.w/2);
         var dy = bk.ballY - (b.y + b.h/2);
         if (Math.abs(dx / b.w) > Math.abs(dy / b.h)) bk.ballVX = -bk.ballVX;
@@ -441,8 +656,9 @@ function bricksLoop() {
   ctx.fillStyle = accent; ctx.font = "11px " + font; ctx.textAlign = "left";
   ctx.fillText(bk.eq, 12, 18);
   var alive = bk.bricks.filter(function(b){return b.alive;}).length;
+  var nEffects = bk.wells.length + bk.attractors.length + bk.repulsors.length + bk.oscillators.length;
   ctx.textAlign = "right"; ctx.fillStyle = dim;
-  ctx.fillText("bricks: " + alive + "  lives: " + bk.lives, W - 12, 18);
+  ctx.fillText("bricks: " + alive + "  lives: " + bk.lives + (nEffects ? "  fields: " + nEffects : ""), W - 12, 18);
   if (!bk.launched) {
     ctx.textAlign = "center"; ctx.fillStyle = dim; ctx.font = "11px " + font;
     ctx.fillText("SPACE or click to launch", W/2, H - 8);

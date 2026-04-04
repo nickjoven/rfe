@@ -360,12 +360,10 @@ function setupSlingshot() {
 
   fd.sling = {
     bodies: bodies,
-    probe: null,
-    trail: [],
+    probes: [],       // multiple simultaneous probes
     targetVal: IPHI,
     targetY: H * (1 - IPHI) * 0.7 + H * 0.15,
     targetBand: 30,
-    launched: false,
     aimAngle: -0.3,
     speed: 4,
     gravity: 800,
@@ -377,54 +375,65 @@ function setupSlingshot() {
 function slingshotClick() {
   var sl = fd.sling;
   if (sl.hit) return;
-  // launch probe
-  sl.probe = {
+  // fire a new probe (keep existing ones flying)
+  var probe = {
     x: sl.launchX, y: sl.launchY,
     vx: sl.speed * Math.cos(sl.aimAngle),
     vy: sl.speed * Math.sin(sl.aimAngle),
-    active: true,
+    trail: [{x: sl.launchX, y: sl.launchY}],
+    active: true, hit: false, id: sl.probes.length,
   };
-  sl.trail = [{x: sl.probe.x, y: sl.probe.y}];
-  sl.launched = true;
+  sl.probes.push(probe);
+  // each new probe slightly perturbs body positions (geometry responds)
   sl.bodies.forEach(function(b) { b.lit = false; });
 }
 
 function stepSlingshot() {
   var sl = fd.sling;
-  if (!sl.probe || !sl.probe.active) return;
-  var p = sl.probe;
+  sl.probes.forEach(function(p) {
+    if (!p.active) return;
 
-  // accumulate gravity from each body
-  var fx = 0, fy = 0;
-  sl.bodies.forEach(function(b) {
-    var dx = b.x - p.x, dy = b.y - p.y;
-    var d2 = dx * dx + dy * dy;
-    var d = Math.sqrt(d2) || 1;
-    if (d > b.r * 0.8) {
-      var strength = sl.gravity * b.mass / d2;
-      fx += strength * dx / d;
-      fy += strength * dy / d;
+    // accumulate gravity from each body
+    var fx = 0, fy = 0;
+    sl.bodies.forEach(function(b) {
+      var dx = b.x - p.x, dy = b.y - p.y;
+      var d2 = dx * dx + dy * dy;
+      var d = Math.sqrt(d2) || 1;
+      if (d > b.r * 0.8) {
+        var strength = sl.gravity * b.mass / d2;
+        fx += strength * dx / d;
+        fy += strength * dy / d;
+      }
+      if (d < b.r * 2.5) b.lit = true;
+    });
+
+    // probe-probe repulsion (nearby probes deflect each other)
+    sl.probes.forEach(function(p2) {
+      if (p2 === p || !p2.active) return;
+      var dx = p.x - p2.x, dy = p.y - p2.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (d < 80 && d > 5) {
+        var rep = 30 / (d * d);
+        fx += rep * dx / d; fy += rep * dy / d;
+      }
+    });
+
+    p.vx += fx; p.vy += fy;
+    p.x += p.vx; p.y += p.vy;
+    p.trail.push({x: p.x, y: p.y});
+    if (p.trail.length > 600) p.trail.shift();
+
+    // check target band
+    if (p.x > fd.W * 0.8 && Math.abs(p.y - sl.targetY) < sl.targetBand) {
+      sl.hit = true; p.active = false; p.hit = true;
+      fieldCleared();
     }
-    // check close pass → light up
-    if (d < b.r * 2.5) b.lit = true;
+
+    // out of bounds
+    if (p.x < -50 || p.x > fd.W + 50 || p.y < -50 || p.y > fd.H + 50) {
+      p.active = false;
+    }
   });
-
-  p.vx += fx; p.vy += fy;
-  p.x += p.vx; p.y += p.vy;
-  sl.trail.push({x: p.x, y: p.y});
-  if (sl.trail.length > 600) sl.trail.shift();
-
-  // check target band
-  if (p.x > fd.W * 0.8 && Math.abs(p.y - sl.targetY) < sl.targetBand) {
-    sl.hit = true; p.active = false;
-    fieldCleared();
-  }
-
-  // out of bounds
-  if (p.x < -50 || p.x > fd.W + 50 || p.y < -50 || p.y > fd.H + 50) {
-    p.active = false;
-    sl.launched = false;
-  }
 }
 
 function drawSlingshot(ctx, W, H) {
@@ -465,40 +474,41 @@ function drawSlingshot(ctx, W, H) {
     ctx.fillText(b.val.toFixed(3), b.x, b.y + b.r + 14);
   });
 
-  // trail
-  if (sl.trail.length > 1) {
-    var color = sl.hit ? ok : accent;
-    for (var i = 1; i < sl.trail.length; i++) {
-      ctx.globalAlpha = (i / sl.trail.length) * 0.5;
+  // probe trails
+  var probeColors = [accent, "#ff8844", "#88aaff", "#ffaa44", "#aa88ff"];
+  sl.probes.forEach(function(p, pi) {
+    if (p.trail.length < 2) return;
+    var color = p.hit ? ok : probeColors[pi % probeColors.length];
+    for (var i = 1; i < p.trail.length; i++) {
+      ctx.globalAlpha = (i / p.trail.length) * 0.45;
       ctx.strokeStyle = color;
-      ctx.lineWidth = 0.5 + 1.5 * (i / sl.trail.length);
+      ctx.lineWidth = 0.5 + 1.5 * (i / p.trail.length);
       ctx.beginPath();
-      ctx.moveTo(sl.trail[i - 1].x, sl.trail[i - 1].y);
-      ctx.lineTo(sl.trail[i].x, sl.trail[i].y);
+      ctx.moveTo(p.trail[i - 1].x, p.trail[i - 1].y);
+      ctx.lineTo(p.trail[i].x, p.trail[i].y);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  }
+    // active probe head
+    if (p.active) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  });
 
-  // probe
-  if (sl.probe && sl.probe.active) {
-    ctx.fillStyle = accent;
-    ctx.beginPath(); ctx.arc(sl.probe.x, sl.probe.y, 3, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // aim line (when not launched)
-  if (!sl.launched && !sl.hit) {
+  // aim line (always available unless cleared)
+  if (!sl.hit) {
     sl.aimAngle = Math.atan2(fd.mouseY - sl.launchY, fd.mouseX - sl.launchX);
     ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
     ctx.beginPath();
     ctx.moveTo(sl.launchX, sl.launchY);
     ctx.lineTo(sl.launchX + 60 * Math.cos(sl.aimAngle), sl.launchY + 60 * Math.sin(sl.aimAngle));
     ctx.stroke(); ctx.setLineDash([]);
-    // launch marker
     ctx.fillStyle = accent;
     ctx.beginPath(); ctx.arc(sl.launchX, sl.launchY, 5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = dim; ctx.font = "11px " + font; ctx.textAlign = "center";
-    ctx.fillText("click to launch", sl.launchX + 60, sl.launchY + 20);
+    var nActive = sl.probes.filter(function(p){return p.active;}).length;
+    ctx.fillText("click to fire" + (nActive ? " (+" + nActive + " in flight)" : ""), sl.launchX + 80, sl.launchY + 20);
   }
 }
 
@@ -1161,17 +1171,14 @@ function setupOrbital() {
   fd.orbital = {
     bodies: bodies,
     cx: cx, cy: cy,
-    probe: null,
-    trail: [],
-    waveTrail: [],    // for interference viz
+    probes: [],       // multiple simultaneous probes
     aimAngle: -0.8,
     speed: 3.5,
     gravity: 600,
     launchX: 50, launchY: H * 0.5,
-    launched: false,
-    returnR: 40,      // radius to count as returned
+    returnR: 40,
     hit: false,
-    minAge: 120,      // must travel at least this many steps
+    minAge: 120,
   };
 }
 
@@ -1179,68 +1186,72 @@ function orbitalClick() {
   var orb = fd.orbital;
   if (orb.hit) return;
   orb.aimAngle = Math.atan2(fd.mouseY - orb.launchY, fd.mouseX - orb.launchX);
-  orb.probe = {
+  var probe = {
     x: orb.launchX, y: orb.launchY,
     vx: orb.speed * Math.cos(orb.aimAngle),
     vy: orb.speed * Math.sin(orb.aimAngle),
-    active: true, age: 0,
+    trail: [{x: orb.launchX, y: orb.launchY}],
+    waveTrail: [],
+    active: true, hit: false, age: 0, id: orb.probes.length,
   };
-  orb.trail = [{x: orb.probe.x, y: orb.probe.y}];
-  orb.waveTrail = [];
-  orb.launched = true;
+  orb.probes.push(probe);
 }
 
 function stepOrbital() {
   var orb = fd.orbital;
-  if (!orb.probe || !orb.probe.active) return;
-  var p = orb.probe;
-  p.age++;
+  orb.probes.forEach(function(p) {
+    if (!p.active) return;
+    p.age++;
 
-  var fx = 0, fy = 0;
-  // central attractor
-  var dx0 = orb.cx - p.x, dy0 = orb.cy - p.y;
-  var d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
-  if (d0 > 10) { var s0 = 3000 / (d0 * d0); fx += s0 * dx0 / d0; fy += s0 * dy0 / d0; }
+    var fx = 0, fy = 0;
+    // central attractor
+    var dx0 = orb.cx - p.x, dy0 = orb.cy - p.y;
+    var d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+    if (d0 > 10) { var s0 = 3000 / (d0 * d0); fx += s0 * dx0 / d0; fy += s0 * dy0 / d0; }
 
-  // body gravity
-  orb.bodies.forEach(function(b) {
-    var dx = b.x - p.x, dy = b.y - p.y;
-    var d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 1;
-    if (d > b.r) {
-      var s = orb.gravity * b.mass / d2;
-      fx += s * dx / d; fy += s * dy / d;
+    // body gravity
+    orb.bodies.forEach(function(b) {
+      var dx = b.x - p.x, dy = b.y - p.y;
+      var d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 1;
+      if (d > b.r) {
+        var s = orb.gravity * b.mass / d2;
+        fx += s * dx / d; fy += s * dy / d;
+      }
+    });
+
+    // probe-probe gravitational interaction
+    orb.probes.forEach(function(p2) {
+      if (p2 === p || !p2.active) return;
+      var dx = p2.x - p.x, dy = p2.y - p.y;
+      var d = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (d > 8 && d < 200) {
+        var s = 200 / (d * d);
+        fx += s * dx / d; fy += s * dy / d;
+      }
+    });
+
+    p.vx += fx; p.vy += fy;
+    p.x += p.vx; p.y += p.vy;
+    p.trail.push({x: p.x, y: p.y});
+    if (p.trail.length > 1200) p.trail.shift();
+
+    var phase = (p.age * 0.15) % (Math.PI * 2);
+    p.waveTrail.push({x: p.x, y: p.y, phase: phase});
+    if (p.waveTrail.length > 1200) p.waveTrail.shift();
+
+    // check return
+    if (p.age > orb.minAge) {
+      var distReturn = Math.hypot(p.x - orb.launchX, p.y - orb.launchY);
+      if (distReturn < orb.returnR) {
+        orb.hit = true; p.active = false; p.hit = true;
+        fieldCleared();
+      }
     }
+
+    // out of bounds or timeout
+    if (p.x < -100 || p.x > fd.W + 100 || p.y < -100 || p.y > fd.H + 100) p.active = false;
+    if (p.age > 2000) p.active = false;
   });
-
-  p.vx += fx; p.vy += fy;
-  p.x += p.vx; p.y += p.vy;
-  orb.trail.push({x: p.x, y: p.y});
-  if (orb.trail.length > 1200) orb.trail.shift();
-
-  // wave trail: store phase info for interference
-  var phase = (p.age * 0.15) % (Math.PI * 2);
-  orb.waveTrail.push({x: p.x, y: p.y, phase: phase});
-  if (orb.waveTrail.length > 1200) orb.waveTrail.shift();
-
-  // check return to launch
-  if (p.age > orb.minAge) {
-    var distReturn = Math.hypot(p.x - orb.launchX, p.y - orb.launchY);
-    if (distReturn < orb.returnR) {
-      orb.hit = true; p.active = false;
-      fieldCleared();
-    }
-  }
-
-  // out of bounds
-  if (p.x < -100 || p.x > fd.W + 100 || p.y < -100 || p.y > fd.H + 100) {
-    p.active = false;
-    orb.launched = false;
-  }
-  // timeout
-  if (p.age > 2000) {
-    p.active = false;
-    orb.launched = false;
-  }
 }
 
 function drawOrbital(ctx, W, H) {
@@ -1275,27 +1286,29 @@ function drawOrbital(ctx, W, H) {
     ctx.fillText(b.label, b.x, b.y - b.r - 6);
   });
 
-  // wave trail with interference coloring
-  if (orb.waveTrail.length > 1) {
-    for (var i = 1; i < orb.waveTrail.length; i++) {
-      var wt = orb.waveTrail[i];
-      var brightness = 0.5 + 0.5 * Math.sin(wt.phase);
-      ctx.globalAlpha = (i / orb.waveTrail.length) * 0.4 * brightness;
-      ctx.strokeStyle = orb.hit ? ok : accent;
-      ctx.lineWidth = 1 + brightness;
-      ctx.beginPath();
-      ctx.moveTo(orb.waveTrail[i - 1].x, orb.waveTrail[i - 1].y);
-      ctx.lineTo(wt.x, wt.y);
-      ctx.stroke();
+  // probe wave trails with interference coloring
+  var probeColors = [accent, "#ff8844", "#88aaff", "#ffaa44", "#aa88ff"];
+  orb.probes.forEach(function(p, pi) {
+    var color = p.hit ? ok : probeColors[pi % probeColors.length];
+    if (p.waveTrail.length > 1) {
+      for (var i = 1; i < p.waveTrail.length; i++) {
+        var wt = p.waveTrail[i];
+        var brightness = 0.5 + 0.5 * Math.sin(wt.phase);
+        ctx.globalAlpha = (i / p.waveTrail.length) * 0.35 * brightness;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1 + brightness;
+        ctx.beginPath();
+        ctx.moveTo(p.waveTrail[i - 1].x, p.waveTrail[i - 1].y);
+        ctx.lineTo(wt.x, wt.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
-  }
-
-  // probe
-  if (orb.probe && orb.probe.active) {
-    ctx.fillStyle = accent;
-    ctx.beginPath(); ctx.arc(orb.probe.x, orb.probe.y, 3, 0, Math.PI * 2); ctx.fill();
-  }
+    if (p.active) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  });
 
   // launch point + return zone
   ctx.strokeStyle = orb.hit ? ok : accent; ctx.lineWidth = 1;
@@ -1303,8 +1316,8 @@ function drawOrbital(ctx, W, H) {
   ctx.fillStyle = orb.hit ? ok : accent; ctx.font = "10px " + font; ctx.textAlign = "center";
   ctx.fillText(orb.hit ? "\u03c6\u00b7\u03c8=1" : "return here", orb.launchX, orb.launchY - orb.returnR - 8);
 
-  // aim line
-  if (!orb.launched && !orb.hit) {
+  // aim line (always available until cleared)
+  if (!orb.hit) {
     orb.aimAngle = Math.atan2(fd.mouseY - orb.launchY, fd.mouseX - orb.launchX);
     ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
     ctx.beginPath();
