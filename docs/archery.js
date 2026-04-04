@@ -89,8 +89,8 @@ function setupArcheryLevel() {
 
   switch (arc.lvl) {
     case 0:
-      arc.gravity = [0, 0.07]; arc.speed = 8;
-      arc.targets = [{x:W*0.78, y:H*0.382, r:24, label:"\u03c6", hit:false}];
+      arc.gravity = [0, 0.04]; arc.speed = 9;
+      arc.targets = [{x:W*0.72, y:H*0.382, r:32, label:"\u03c6", hit:false}];
       break;
     case 1:
       arc.gravity = [0, 0]; arc.speed = 10;
@@ -166,8 +166,20 @@ function archeryKey(e) {
     { e.preventDefault(); arc.state = "playing"; return; }
   if (arc.state === "cleared" && (e.key===" "||e.key==="Enter"))
     { e.preventDefault(); if (arc.lvl<6) advancePhase(); return; }
+  if (arc.state === "cleared" && e.key === "ArrowLeft")
+    { e.preventDefault(); if (currentPhase > 0) goPhase(currentPhase - 1); return; }
+  if (arc.state === "cleared" && e.key === "ArrowRight")
+    { e.preventDefault(); if (currentPhase < PHASES.length - 1) advancePhase(); return; }
   if (e.key === "Tab")       { e.preventDefault(); advancePhase(); }
-  if (e.key === "r" && arc.state === "playing") initArchery();
+  if (e.key === "r" && arc.state === "playing") {
+    // soft reset: clear arrows but keep stuck arrows and state
+    arc.arrows = [];
+    arc.canFire = true;
+    arc.bandsHit = new Set();
+    // keep stuckArrows for level 3 context
+    return;
+  }
+  if (e.key === "R" && arc.state === "playing") initArchery(); // hard reset
   if (e.key === "ArrowUp")   arc.aimAngle -= 0.04;
   if (e.key === "ArrowDown") arc.aimAngle += 0.04;
   if (e.key === " " && arc.state === "playing")
@@ -320,7 +332,7 @@ function archeryLoop() {
     ctx.fillStyle=accent; ctx.font="13px "+font;
     ctx.fillText('"'+lv2.hint+'"', W/2, H*0.58);
     ctx.fillStyle=dim; ctx.font="11px "+font;
-    ctx.fillText(lvl<6?"click or SPACE \u2192 next":"\u03c6 \u00b7 \u03c8 = 1 \u2014 the map contains the territory",W/2,H*0.72);
+    ctx.fillText(lvl<6?"SPACE \u2192 next    \u2190\u2192 revisit":"\u03c6 \u00b7 \u03c8 = 1 \u2014 the map contains the territory",W/2,H*0.72);
     _archeryRAF=requestAnimationFrame(archeryLoop); return;
   }
 
@@ -465,7 +477,7 @@ function archeryLoop() {
   if (lvl===3) ctx.fillText("iterations: "+arc.stuckArrows.length, W-12, 32);
   ctx.fillStyle=dim; ctx.font="11px "+font; ctx.textAlign="center";
   ctx.fillText(lv3.hint, W/2, H-12);
-  ctx.textAlign="left"; ctx.fillText("[R] reset  [Tab] skip", 12, H-12);
+  ctx.textAlign="left"; ctx.fillText("[r] retry  [Shift+R] full reset  [Tab] skip", 12, H-12);
 
   _archeryRAF = requestAnimationFrame(archeryLoop);
 }

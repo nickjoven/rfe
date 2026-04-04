@@ -79,6 +79,8 @@ function initField() {
   canvas.ontouchmove = function(e) { e.preventDefault(); fieldMove(e.touches[0]); };
   canvas.onmousedown = fieldDown;
   canvas.ontouchstart = function(e) { e.preventDefault(); fieldDown(e.touches[0]); };
+  canvas.onmouseup = function() { if (fd.spec) fd.spec.dragging = -1; };
+  canvas.ontouchend = function() { if (fd.spec) fd.spec.dragging = -1; };
   document.onkeydown = fieldKey;
 
   if (_fieldRAF) cancelAnimationFrame(_fieldRAF);
@@ -121,7 +123,7 @@ function fieldDown(e) {
   switch (fd.lvl) {
     case 0: cobwebClick(); break;
     case 1: slingshotClick(); break;
-    case 2: /* spectrum uses mouse position directly */ break;
+    case 2: spectrumClick(); break;
     case 3: contractionClick(); break;
     case 4: /* three spectra uses mouse position */ break;
     case 5: /* tongue nav uses mouse position */ break;
@@ -138,8 +140,40 @@ function fieldKey(e) {
     if (fd.time - fd.clearedAt < 120) return; // mandatory 2s pause
     if (fd.lvl < 6) advancePhase(); return;
   }
+  if (fd.state === "cleared" && e.key === "ArrowLeft") {
+    e.preventDefault(); if (currentPhase > 0) goPhase(currentPhase - 1); return;
+  }
+  if (fd.state === "cleared" && e.key === "ArrowRight") {
+    e.preventDefault(); if (currentPhase < PHASES.length - 1) advancePhase(); return;
+  }
   if (e.key === "Tab") { e.preventDefault(); advancePhase(); }
-  if (e.key === "r" && fd.state === "playing") initField();
+  if (e.key === "r" && fd.state === "playing") {
+    // soft reset: clear probes/position but keep accumulated context
+    switch (fd.lvl) {
+      case 0: // cobweb: clear cobweb but keep plot
+        if (fd.cobweb) { fd.cobweb.x0 = null; fd.cobweb.iterates = []; fd.cobweb.cobwebPts = []; fd.cobweb.animStep = 0; fd.cobweb.converged = false; }
+        break;
+      case 1: // slingshot: clear probes, keep bodies lit
+        if (fd.sling) { fd.sling.probes = []; fd.sling.hit = false; }
+        break;
+      case 2: // spectrum: keep couplings and tuning, just deselect
+        if (fd.spec) { fd.spec.oscs.forEach(function(o){ o.selected = false; }); fd.spec.dragging = -1; }
+        break;
+      case 3: // contraction: clear seeds, keep fixed point viz
+        if (fd.contraction) { fd.contraction.seeds = []; fd.contraction.converged = 0; }
+        break;
+      case 5: // tongues: restart K but keep trail visible
+        if (fd.tongue) { fd.tongue.K = 0; fd.tongue.alive = true; fd.tongue.won = false; }
+        break;
+      case 6: // orbital: clear probes, keep bodies
+        if (fd.orbital) { fd.orbital.probes = []; fd.orbital.hit = false; }
+        break;
+      default: break;
+    }
+    fd.cleared = false; fd.state = "playing";
+    return;
+  }
+  if (e.key === "R" && fd.state === "playing") initField(); // hard reset
 }
 
 function fieldCleared() {
@@ -524,35 +558,94 @@ function drawSlingshot(ctx, W, H) {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    LEVEL 2: PHASE LOCK SPECTRUM
-   Oscillators on a circle. Mouse Y controls coupling K.
-   Watch synchronization; frequency spectrum shows Arnold tongues emerging.
+   Click oscillators to select them, then drag up/down to tune their
+   natural frequency. Click between two oscillators to couple them.
+   Build coupling incrementally until the ensemble synchronizes.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function setupSpectrum() {
-  var N = 24;
+  var N = 16;
   var oscs = [];
   for (var i = 0; i < N; i++) {
+    // spread natural frequencies widely so they start incoherent
     oscs.push({
       theta: Math.random() * Math.PI * 2,
-      omega: 0.5 + Math.random() * 1.0, // natural frequency in [0.5, 1.5]
+      omega: 0.3 + (i / (N - 1)) * 1.4,  // spread [0.3, 1.7]
+      coupled: false,   // has this oscillator been manually coupled?
+      selected: false,
     });
   }
   fd.spec = {
     oscs: oscs,
-    K: 0,
+    K: 0,            // global coupling — builds as you couple pairs
+    couplings: [],   // [{a, b}] — manually created links
+    maxK: 2,
     orderR: 0, orderPsi: 0,
     rHistory: [],
     maxHistory: 200,
+    dragging: -1,    // index of oscillator being tuned
     cleared: false,
   };
 }
 
+function spectrumClick() {
+  var sp = fd.spec;
+  if (sp.cleared) return;
+  var W = fd.W, H = fd.H;
+  var cx = W * 0.25, cy = H * 0.42, cr = Math.min(W * 0.2, H * 0.32);
+
+  // check if clicking near an oscillator on the circle
+  var N = sp.oscs.length;
+  var closest = -1, closestD = 30;
+  for (var i = 0; i < N; i++) {
+    var ox = cx + cr * Math.cos(sp.oscs[i].theta);
+    var oy = cy + cr * Math.sin(sp.oscs[i].theta);
+    var d = Math.hypot(fd.mouseX - ox, fd.mouseY - oy);
+    if (d < closestD) { closestD = d; closest = i; }
+  }
+
+  if (closest >= 0) {
+    var wasSelected = sp.oscs.filter(function(o) { return o.selected; });
+    if (wasSelected.length === 1 && !sp.oscs[closest].selected) {
+      // second selection — create coupling link
+      var a = sp.oscs.indexOf(wasSelected[0]);
+      var b = closest;
+      // avoid duplicate
+      var exists = sp.couplings.some(function(c) {
+        return (c.a === a && c.b === b) || (c.a === b && c.b === a);
+      });
+      if (!exists) {
+        sp.couplings.push({a: a, b: b});
+        sp.oscs[a].coupled = true;
+        sp.oscs[b].coupled = true;
+        // each link increases effective K
+        sp.K = Math.min(sp.maxK, sp.couplings.length * 0.25);
+      }
+      // deselect all
+      sp.oscs.forEach(function(o) { o.selected = false; });
+    } else {
+      // first selection or re-click
+      sp.oscs.forEach(function(o) { o.selected = false; });
+      sp.oscs[closest].selected = true;
+      sp.dragging = closest;
+    }
+  } else {
+    // clicked empty space — deselect
+    sp.oscs.forEach(function(o) { o.selected = false; });
+    sp.dragging = -1;
+  }
+}
+
 function stepSpectrum() {
   var sp = fd.spec;
-  // K tracks mouse Y: top=0, bottom=2
-  sp.K = Math.max(0, Math.min(2, (fd.mouseY / fd.H) * 2));
-
   var N = sp.oscs.length;
+
+  // if dragging an oscillator, tune its omega via mouse Y
+  if (sp.dragging >= 0) {
+    var normY = 1 - (fd.mouseY / fd.H); // 0=bottom, 1=top
+    sp.oscs[sp.dragging].omega = 0.1 + normY * 1.8; // range [0.1, 1.9]
+  }
+
   // compute order parameter
   var sumCos = 0, sumSin = 0;
   for (var i = 0; i < N; i++) {
@@ -562,27 +655,39 @@ function stepSpectrum() {
   sp.orderR = Math.sqrt(sumCos * sumCos + sumSin * sumSin) / N;
   sp.orderPsi = Math.atan2(sumSin, sumCos);
 
-  // Kuramoto step
+  // Kuramoto step with both global K and explicit pairwise couplings
   var dt = 0.05;
+  var dtheta = new Array(N).fill(0);
   for (i = 0; i < N; i++) {
-    var oi = sp.oscs[i];
-    var coupling = 0;
+    dtheta[i] = sp.oscs[i].omega;
+    // global mean-field coupling (weak)
+    var globalK = sp.K * 0.3;
+    var mfCoupling = 0;
     for (var j = 0; j < N; j++) {
-      coupling += Math.sin(sp.oscs[j].theta - oi.theta);
+      mfCoupling += Math.sin(sp.oscs[j].theta - sp.oscs[i].theta);
     }
-    oi.theta += dt * (oi.omega + (sp.K / N) * coupling);
-    // wrap
-    oi.theta = oi.theta % (Math.PI * 2);
-    if (oi.theta < 0) oi.theta += Math.PI * 2;
+    dtheta[i] += (globalK / N) * mfCoupling;
+  }
+  // explicit pairwise couplings (strong)
+  sp.couplings.forEach(function(c) {
+    var pairK = 0.8;
+    dtheta[c.a] += pairK * Math.sin(sp.oscs[c.b].theta - sp.oscs[c.a].theta);
+    dtheta[c.b] += pairK * Math.sin(sp.oscs[c.a].theta - sp.oscs[c.b].theta);
+  });
+
+  for (i = 0; i < N; i++) {
+    sp.oscs[i].theta += dt * dtheta[i];
+    sp.oscs[i].theta = sp.oscs[i].theta % (Math.PI * 2);
+    if (sp.oscs[i].theta < 0) sp.oscs[i].theta += Math.PI * 2;
   }
 
   sp.rHistory.push(sp.orderR);
   if (sp.rHistory.length > sp.maxHistory) sp.rHistory.shift();
 
-  // clear condition: sustained r > 0.92
-  if (!sp.cleared && sp.orderR > 0.92) {
-    var recent = sp.rHistory.slice(-30);
-    if (recent.length >= 30 && recent.every(function(v) { return v > 0.85; })) {
+  // clear condition: sustained r > 0.88
+  if (!sp.cleared && sp.orderR > 0.88) {
+    var recent = sp.rHistory.slice(-40);
+    if (recent.length >= 40 && recent.every(function(v) { return v > 0.80; })) {
       sp.cleared = true;
       fieldCleared();
     }
@@ -602,6 +707,16 @@ function drawSpectrum(ctx, W, H) {
   ctx.strokeStyle = dim; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
 
+  // coupling links
+  sp.couplings.forEach(function(c) {
+    var oa = sp.oscs[c.a], ob = sp.oscs[c.b];
+    var ax = cx + cr * Math.cos(oa.theta), ay = cy + cr * Math.sin(oa.theta);
+    var bx = cx + cr * Math.cos(ob.theta), by = cy + cr * Math.sin(ob.theta);
+    ctx.strokeStyle = ok; ctx.lineWidth = 1; ctx.globalAlpha = 0.3;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
   // order parameter arrow
   ctx.strokeStyle = ok; ctx.lineWidth = 2;
   ctx.beginPath();
@@ -612,55 +727,84 @@ function drawSpectrum(ctx, W, H) {
 
   // oscillator dots
   for (var i = 0; i < N; i++) {
-    var ox = cx + cr * Math.cos(sp.oscs[i].theta);
-    var oy = cy + cr * Math.sin(sp.oscs[i].theta);
-    ctx.fillStyle = accent;
-    ctx.beginPath(); ctx.arc(ox, oy, 3.5, 0, Math.PI * 2); ctx.fill();
+    var oi = sp.oscs[i];
+    var ox = cx + cr * Math.cos(oi.theta);
+    var oy = cy + cr * Math.sin(oi.theta);
+    var isSelected = oi.selected;
+    var isCoupled = oi.coupled;
+    // size and color based on state
+    var dotR = isSelected ? 7 : (isCoupled ? 5 : 3.5);
+    ctx.fillStyle = isSelected ? ok : (isCoupled ? accent : dim);
+    ctx.beginPath(); ctx.arc(ox, oy, dotR, 0, Math.PI * 2); ctx.fill();
+    // frequency label for selected
+    if (isSelected) {
+      ctx.fillStyle = fg; ctx.font = "9px " + font; ctx.textAlign = "center";
+      ctx.fillText("\u03c9=" + oi.omega.toFixed(2), ox, oy - dotR - 6);
+    }
   }
 
-  // r label
+  // r and K labels
   ctx.fillStyle = ok; ctx.font = "bold 14px " + font; ctx.textAlign = "center";
   ctx.fillText("r = " + sp.orderR.toFixed(3), cx, cy + cr + 30);
   ctx.fillStyle = dim; ctx.font = "11px " + font;
-  ctx.fillText("K = " + sp.K.toFixed(2), cx, cy + cr + 48);
+  ctx.fillText("K = " + sp.K.toFixed(2) + "  links: " + sp.couplings.length, cx, cy + cr + 48);
+
+  // instructions
+  ctx.fillStyle = dim; ctx.font = "10px " + font;
+  ctx.fillText("click oscillator \u2192 select, drag \u2191\u2193 to tune \u03c9", cx, cy + cr + 65);
+  ctx.fillText("click two oscillators \u2192 couple them", cx, cy + cr + 78);
 
   // ── right top: frequency spectrum ──
   var specX = W * 0.52, specW = W * 0.44, specY = 30, specH = H * 0.35;
   ctx.strokeStyle = dim; ctx.lineWidth = 0.5;
   ctx.strokeRect(specX, specY, specW, specH);
   ctx.fillStyle = dim; ctx.font = "10px " + font; ctx.textAlign = "center";
-  ctx.fillText("frequency spectrum", specX + specW / 2, specY - 6);
+  ctx.fillText("natural frequencies \u03c9\u1d62", specX + specW / 2, specY - 6);
 
-  // histogram of effective frequencies (dtheta/dt)
-  var freqs = [];
+  // show each oscillator's omega as a tick on the frequency axis
+  var fMin = 0, fMax = 2;
   for (i = 0; i < N; i++) {
+    var fx = specX + ((sp.oscs[i].omega - fMin) / (fMax - fMin)) * specW;
+    var isSel = sp.oscs[i].selected;
+    ctx.strokeStyle = isSel ? ok : (sp.oscs[i].coupled ? accent : dim);
+    ctx.lineWidth = isSel ? 2 : 1;
+    ctx.globalAlpha = isSel ? 1 : 0.6;
+    ctx.beginPath();
+    ctx.moveTo(fx, specY + specH); ctx.lineTo(fx, specY + specH * 0.3);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // effective frequency histogram (actual dθ/dt including coupling)
+  var effFreqs = [];
+  for (i = 0; i < N; i++) {
+    var eff = sp.oscs[i].omega;
     var coupling = 0;
     for (var j = 0; j < N; j++) {
       coupling += Math.sin(sp.oscs[j].theta - sp.oscs[i].theta);
     }
-    freqs.push(sp.oscs[i].omega + (sp.K / N) * coupling);
+    eff += (sp.K * 0.3 / N) * coupling;
+    sp.couplings.forEach(function(c) {
+      if (c.a === i) eff += 0.8 * Math.sin(sp.oscs[c.b].theta - sp.oscs[i].theta);
+      if (c.b === i) eff += 0.8 * Math.sin(sp.oscs[c.a].theta - sp.oscs[i].theta);
+    });
+    effFreqs.push(eff);
   }
-  // bin into histogram
-  var bins = 30, fMin = 0, fMax = 2;
-  var counts = new Array(bins).fill(0);
-  for (i = 0; i < freqs.length; i++) {
-    var bin = Math.floor((freqs[i] - fMin) / (fMax - fMin) * bins);
-    if (bin >= 0 && bin < bins) counts[bin]++;
-  }
-  var maxC = 0;
-  for (i = 0; i < bins; i++) if (counts[i] > maxC) maxC = counts[i];
-
-  var barW = specW / bins;
-  for (i = 0; i < bins; i++) {
-    if (counts[i] === 0) continue;
-    var barH = (counts[i] / Math.max(maxC, 1)) * specH * 0.8;
+  // overlay effective frequencies as smaller ticks
+  for (i = 0; i < N; i++) {
+    var efx = specX + ((effFreqs[i] - fMin) / (fMax - fMin)) * specW;
     ctx.fillStyle = accent; ctx.globalAlpha = 0.4;
-    ctx.fillRect(specX + i * barW, specY + specH - barH, barW - 1, barH);
+    ctx.beginPath(); ctx.arc(efx, specY + specH * 0.15, 3, 0, Math.PI * 2); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  // labels
+  ctx.fillStyle = dim; ctx.font = "9px " + font; ctx.textAlign = "left";
+  ctx.fillText("0", specX, specY + specH + 12);
+  ctx.textAlign = "right"; ctx.fillText("2", specX + specW, specY + specH + 12);
+  ctx.textAlign = "center"; ctx.fillText("\u2022 effective freq", specX + specW / 2, specY + specH + 12);
 
   // ── right bottom: r history ──
-  var histY = specY + specH + 30, histH = H * 0.3, histW = specW;
+  var histY = specY + specH + 28, histH = H * 0.3, histW = specW;
   ctx.strokeStyle = dim; ctx.lineWidth = 0.5;
   ctx.strokeRect(specX, histY, histW, histH);
   ctx.fillStyle = dim; ctx.font = "10px " + font; ctx.textAlign = "center";
@@ -668,11 +812,11 @@ function drawSpectrum(ctx, W, H) {
 
   // threshold line
   ctx.strokeStyle = ok; ctx.lineWidth = 0.5; ctx.setLineDash([3, 3]);
-  var threshY = histY + histH * (1 - 0.92);
+  var threshY = histY + histH * (1 - 0.88);
   ctx.beginPath(); ctx.moveTo(specX, threshY); ctx.lineTo(specX + histW, threshY); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = ok; ctx.font = "9px " + font; ctx.textAlign = "left";
-  ctx.fillText("0.92", specX + histW + 4, threshY + 3);
+  ctx.fillText("0.88", specX + histW + 4, threshY + 3);
 
   // plot r history
   if (sp.rHistory.length > 1) {
@@ -685,14 +829,6 @@ function drawSpectrum(ctx, W, H) {
     }
     ctx.stroke();
   }
-
-  // K slider visual (left edge)
-  ctx.fillStyle = dim; ctx.font = "10px " + font; ctx.textAlign = "center";
-  ctx.fillText("\u2191 K=0", 16, 20);
-  ctx.fillText("\u2193 K=2", 16, H - 10);
-  ctx.strokeStyle = accent; ctx.lineWidth = 2;
-  var sliderY = (sp.K / 2) * H;
-  ctx.beginPath(); ctx.moveTo(8, sliderY); ctx.lineTo(24, sliderY); ctx.stroke();
 }
 
 
@@ -1453,7 +1589,7 @@ function fieldLoop() {
   ctx.fillText("\u00a7" + (lvl + 1) + " " + lv3.title, W - 12, 18);
   ctx.fillStyle = dim; ctx.font = "11px " + font; ctx.textAlign = "center";
   ctx.fillText(lv3.hint, W / 2, H - 12);
-  ctx.textAlign = "left"; ctx.fillText("[R] reset  [Tab] skip", 12, H - 12);
+  ctx.textAlign = "left"; ctx.fillText("[r] retry  [Shift+R] full reset  [Tab] skip", 12, H - 12);
 
   _fieldRAF = requestAnimationFrame(fieldLoop);
 }
