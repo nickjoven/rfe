@@ -153,9 +153,9 @@ body{background:var(--bg);color:var(--fg);
 #tw-input{position:absolute;opacity:0;width:0;height:0}
 #tw-stats{padding:8px 0;font-size:12px;color:var(--dim);border-top:1px solid var(--grid)}
 
-/* ── surfer mode ─────────────────────────────────────────── */
-#surfer{display:none;height:100%;position:relative}
-#surfer-canvas{width:100%;height:100%}
+/* ── bricks mode ─────────────────────────────────────────── */
+#bricks{display:none;height:100%;position:relative}
+#bricks-canvas{width:100%;height:100%}
 
 /* ── archery mode ──────────────────────────────────────────── */
 #archery{display:none;height:100%;position:relative}
@@ -197,7 +197,7 @@ body{background:var(--bg);color:var(--fg);
     <span class="title">RFE ⊢ x = f(x) → G<sub>μν</sub></span>
     <div class="modes">
       <button onclick="setMode('typewriter')" id="btn-typewriter">1 TYPE</button>
-      <button onclick="setMode('surfer')" id="btn-surfer">2 SURF</button>
+      <button onclick="setMode('bricks')" id="btn-bricks">2 BRICKS</button>
       <button onclick="setMode('reader')" id="btn-reader">3 READ</button>
       <button onclick="setMode('puzzle')" id="btn-puzzle">4 PUZZLE</button>
       <a href="rfe_journey.ipynb" style="border:1px solid var(--dim);color:var(--dim);padding:2px 8px;font-size:11px;text-decoration:none;display:inline-block" target="_blank">5 .ipynb</a>
@@ -238,7 +238,7 @@ body{background:var(--bg);color:var(--fg);
   <div id="stage">
     <div id="hud"></div>
     <div id="typewriter"></div>
-    <div id="surfer"><canvas id="surfer-canvas"></canvas></div>
+    <div id="bricks"><canvas id="bricks-canvas"></canvas></div>
     <div id="reader"></div>
     <div id="puzzle"></div>
     <div id="archery"><canvas id="archery-canvas"></canvas></div>

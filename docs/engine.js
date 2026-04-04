@@ -8,9 +8,10 @@
 // ── aesthetic ──────────────────────────────────────────────────────────────
 function setAesthetic(name) {
   document.documentElement.setAttribute("data-aesthetic", name);
-  document.querySelectorAll("#aesthetic-bar button").forEach(b =>
-    b.classList.toggle("active", (b.textContent.trim() === (name || "wire")))
-  );
+  document.querySelectorAll("#aesthetic-bar button").forEach(b => {
+    if (!isNaN(+b.textContent.trim())) return;
+    b.classList.toggle("active", (b.textContent.trim() === (name || "wire")));
+  });
   try { localStorage.setItem("rfe-aesthetic", name); } catch(e) {}
   if (name === "artemis") unlockArchery();
 }
@@ -118,7 +119,7 @@ function setMode(mode) {
   if (mode === "archery" && !archeryUnlocked) return;
   currentMode = mode;
   // hide all
-  ["typewriter","surfer","reader","puzzle","archery"].forEach(m => {
+  ["typewriter","bricks","reader","puzzle","archery"].forEach(m => {
     document.getElementById(m).style.display = "none";
   });
   document.querySelectorAll("#topbar .modes button").forEach(b => b.classList.remove("active"));
@@ -127,13 +128,14 @@ function setMode(mode) {
   $footMode.textContent = "MODE: " + mode.toUpperCase();
 
   // teardown
-  if (_surferRAF) { cancelAnimationFrame(_surferRAF); _surferRAF = null; }
+  document.onkeydown = null;
+  if (_bricksRAF) { cancelAnimationFrame(_bricksRAF); _bricksRAF = null; }
   if (_archeryRAF) { cancelAnimationFrame(_archeryRAF); _archeryRAF = null; }
 
   // init
   switch (mode) {
     case "typewriter": initTypewriter(); break;
-    case "surfer":     initSurfer();     break;
+    case "bricks":     initBricks();     break;
     case "reader":     initReader();     break;
     case "puzzle":     initPuzzle();     break;
     case "archery":    initArchery();    break;
@@ -175,7 +177,13 @@ function handleTypewriterKey(e) {
   const ch = e.key === "Enter" ? "\n" : e.key;
   if (!tw.startTime) tw.startTime = Date.now();
 
-  if (ch === tw.text[tw.pos]) {
+  var expected = tw.text[tw.pos];
+  // accept hyphen for em/en dash, and common keyboard substitutes
+  var match = (ch === expected) ||
+    (ch === "-" && (expected === "\u2014" || expected === "\u2013")) ||
+    (ch === "'" && (expected === "\u2018" || expected === "\u2019")) ||
+    (ch === '"' && (expected === "\u201c" || expected === "\u201d"));
+  if (match) {
     tw.pos++;
   } else {
     tw.errors++;
@@ -201,8 +209,9 @@ function renderTypewriter() {
     `<span class="done">${escHtml(done)}</span>` +
     `<span class="cursor-char">${escHtml(cur || " ")}</span>` +
     `<span class="pending">${escHtml(rest)}</span>`;
-  // auto-scroll
-  $d.scrollTop = $d.scrollHeight;
+  // auto-scroll to keep cursor visible
+  const cursor = $d.querySelector('.cursor-char');
+  if (cursor) cursor.scrollIntoView({ block: 'center', behavior: 'instant' });
 }
 
 function updateTwStats() {
@@ -219,165 +228,224 @@ function updateTwStats() {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODE 2: SUBWAY SURFER
+// MODE 2: BRICK BREAK
 // ═══════════════════════════════════════════════════════════════════════════
 
-let _surferRAF = null;
-let surf = {};
-
-function initSurfer() {
-  const $s = document.getElementById("surfer");
-  $s.style.display = "block";
-  const canvas = document.getElementById("surfer-canvas");
-  const ctx = canvas.getContext("2d");
-
-  // size
-  canvas.width  = $s.clientWidth;
-  canvas.height = $s.clientHeight;
-  const W = canvas.width, H = canvas.height;
-
-  const phase = PHASES[currentPhase];
-  const lines = phase.text.trim().split("\n");
-
-  surf = {
-    ctx, W, H, lines,
-    scroll: 0,
-    speed: 1.2,
-    lane: 1,       // 0,1,2
-    laneW: W / 3,
-    playerY: H - 60,
-    playerW: 20,
-    playerH: 30,
-    obstacles: [],
-    textY: 0,
-    lineH: 22,
-    score: 0,
-    alive: true,
-    eq: phase.equation,
-    phaseComplete: false,
-  };
-
-  // generate obstacles
-  surf.obstacles = [];
-  for (let i = 0; i < 30; i++) {
-    surf.obstacles.push({
-      lane: Math.floor(Math.random() * 3),
-      y: -(200 + i * 180 + Math.random() * 100),
-      w: 40 + Math.random() * 40,
-      h: 12,
-      passed: false,
-    });
-  }
-
-  // controls
-  document.onkeydown = surferKey;
-  canvas.ontouchstart = surferTouch;
-
-  surferLoop();
-}
-
-function surferKey(e) {
-  if (currentMode !== "surfer") return;
-  if (e.key === "ArrowLeft"  || e.key === "a") surf.lane = Math.max(0, surf.lane - 1);
-  if (e.key === "ArrowRight" || e.key === "d") surf.lane = Math.min(2, surf.lane + 1);
-  if (e.key === "Tab") { e.preventDefault(); advancePhase(); }
-  if (!surf.alive && e.key === " ") initSurfer(); // restart
-}
-
-function surferTouch(e) {
-  const x = e.touches[0].clientX;
-  if (x < surf.W / 3) surf.lane = Math.max(0, surf.lane - 1);
-  else if (x > 2 * surf.W / 3) surf.lane = Math.min(2, surf.lane + 1);
-}
+let _bricksRAF = null;
+let bk = {};
 
 function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 function _fontFace() { return _css("--user-face") || _css("--mono"); }
 
-function surferLoop() {
-  const { ctx, W, H } = surf;
+// key concepts per phase for brick labels
+const BRICK_CONCEPTS = [
+  ["x = f(x)","fixed point","\u03c6","1/\u03c6","self-consistent","golden ratio","x\u00b2-x-1=0","observer"],
+  ["mediant","Stern-Brocot","(a+c)/(b+d)","Fibonacci","1/q\u00b2","rational","binary tree","p/q"],
+  ["Kuramoto","coupling K","synchronize","Arnold tongue","\u0394\u03b8","phase lock","U(1)","resonance"],
+  ["N(p/q)","g(\u03c9)","w(p,q,K)","order r","self-referential","iterate","Banach","scale-free"],
+  ["\u03a9_\u039b=0.684","a\u2080=cH/2\u03c0","n\u209b=0.965","Born rule","P=|\u03c8|\u00b2","dark energy","MOND","RAR"],
+  ["1/q\u00b2","Basel sum","\u03c0\u00b2/6","KAM tori","tongue width","continuum","G\u03bcv","curvature"],
+  ["\u03c6\u00b7\u03c8=1","dissolution","one tree","one coupling","fixed point","no free params","x=f(x)","the map"],
+];
+
+function initBricks() {
+  const $s = document.getElementById("bricks");
+  $s.style.display = "block";
+  const canvas = document.getElementById("bricks-canvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = $s.clientWidth;
+  canvas.height = $s.clientHeight;
+  const W = canvas.width, H = canvas.height;
+
+  const phase = PHASES[currentPhase];
+  const concepts = BRICK_CONCEPTS[currentPhase] || BRICK_CONCEPTS[0];
+  const cols = Math.min(8, concepts.length);
+  const rows = Math.ceil(concepts.length / cols);
+  const brickW = (W - 40) / cols;
+  const brickH = 20;
+  const bricks = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      if (idx >= concepts.length) break;
+      bricks.push({
+        x: 20 + c * brickW, y: 50 + r * (brickH + 6),
+        w: brickW - 3, h: brickH,
+        label: concepts[idx], alive: true, flash: 0,
+      });
+    }
+  }
+
+  bk = {
+    ctx, canvas, W, H,
+    paddleX: W / 2, paddleW: 90, paddleH: 8, paddleY: H - 36,
+    ballX: W / 2, ballY: H - 48,
+    ballVX: 0, ballVY: 0, ballR: 4,
+    speed: 4.5 + currentPhase * 0.3,
+    launched: false,
+    bricks: bricks,
+    lives: 3,
+    eq: phase.equation,
+    gravity: [0, 0.008 * currentPhase],
+    phaseComplete: false,
+    revealed: [],
+  };
+
+  canvas.onmousemove = bricksMouseMove;
+  canvas.ontouchmove = function(e) { e.preventDefault(); bricksMouseMove(e.touches[0]); };
+  canvas.onclick = function() { if (!bk.launched) launchBall(); };
+  document.onkeydown = bricksKey;
+
+  bricksLoop();
+}
+
+function launchBall() {
+  bk.launched = true;
+  var angle = -Math.PI/2 + (Math.random()-0.5)*0.6;
+  bk.ballVX = bk.speed * Math.cos(angle);
+  bk.ballVY = bk.speed * Math.sin(angle);
+}
+
+function bricksMouseMove(e) {
+  var rect = bk.canvas.getBoundingClientRect();
+  bk.paddleX = (e.clientX||e.pageX) - rect.left;
+  bk.paddleX = Math.max(bk.paddleW/2, Math.min(bk.W - bk.paddleW/2, bk.paddleX));
+  if (!bk.launched) bk.ballX = bk.paddleX;
+}
+
+function bricksKey(e) {
+  if (currentMode !== "bricks") return;
+  if (e.key === "ArrowLeft")  bk.paddleX = Math.max(bk.paddleW/2, bk.paddleX - 24);
+  if (e.key === "ArrowRight") bk.paddleX = Math.min(bk.W - bk.paddleW/2, bk.paddleX + 24);
+  if (e.key === " " && !bk.launched) { e.preventDefault(); launchBall(); }
+  if (e.key === "Tab") { e.preventDefault(); advancePhase(); }
+  if (e.key === "r") initBricks();
+  if (!bk.launched) bk.ballX = bk.paddleX;
+}
+
+function bricksLoop() {
+  var ctx = bk.ctx, W = bk.W, H = bk.H;
+  var accent = _css("--accent"), dim = _css("--dim");
+  var grid = _css("--grid"), fg = _css("--fg"), bg = _css("--bg");
+  var ok = _css("--ok"), font = _fontFace();
+
   ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // background fill (for non-default aesthetics)
-  ctx.fillStyle = _css("--bg");
-  ctx.fillRect(0, 0, W, H);
+  // grid
+  ctx.strokeStyle = grid; ctx.lineWidth = 0.5;
+  for (var y = 50; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  for (var x = 50; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
 
-  // background grid
-  ctx.strokeStyle = _css("--grid");
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += surf.laneW) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  // ball physics
+  if (bk.launched) {
+    bk.ballVX += bk.gravity[0];
+    bk.ballVY += bk.gravity[1];
+    bk.ballX += bk.ballVX;
+    bk.ballY += bk.ballVY;
+
+    // wall bounces
+    if (bk.ballX - bk.ballR < 0) { bk.ballX = bk.ballR; bk.ballVX = Math.abs(bk.ballVX); }
+    if (bk.ballX + bk.ballR > W) { bk.ballX = W - bk.ballR; bk.ballVX = -Math.abs(bk.ballVX); }
+    if (bk.ballY - bk.ballR < 0) { bk.ballY = bk.ballR; bk.ballVY = Math.abs(bk.ballVY); }
+
+    // paddle bounce
+    if (bk.ballVY > 0 &&
+        bk.ballY + bk.ballR >= bk.paddleY &&
+        bk.ballY + bk.ballR <= bk.paddleY + bk.paddleH + 4 &&
+        bk.ballX >= bk.paddleX - bk.paddleW/2 &&
+        bk.ballX <= bk.paddleX + bk.paddleW/2) {
+      bk.ballY = bk.paddleY - bk.ballR;
+      var off = (bk.ballX - bk.paddleX) / (bk.paddleW / 2);
+      var angle = off * Math.PI * 0.4 - Math.PI/2;
+      bk.ballVX = bk.speed * Math.cos(angle);
+      bk.ballVY = bk.speed * Math.sin(angle);
+    }
+
+    // ball lost
+    if (bk.ballY > H + 20) {
+      bk.lives--;
+      bk.launched = false;
+      bk.ballX = bk.paddleX;
+      bk.ballY = bk.paddleY - 12;
+      bk.ballVX = 0; bk.ballVY = 0;
+      if (bk.lives <= 0) {
+        bk.bricks.forEach(function(b) { b.alive = true; });
+        bk.lives = 3;
+        bk.revealed = [];
+      }
+    }
+
+    // brick collisions
+    bk.bricks.forEach(function(b) {
+      if (!b.alive) return;
+      if (bk.ballX + bk.ballR > b.x && bk.ballX - bk.ballR < b.x + b.w &&
+          bk.ballY + bk.ballR > b.y && bk.ballY - bk.ballR < b.y + b.h) {
+        b.alive = false; b.flash = 30;
+        bk.revealed.push(b.label);
+        var dx = bk.ballX - (b.x + b.w/2);
+        var dy = bk.ballY - (b.y + b.h/2);
+        if (Math.abs(dx / b.w) > Math.abs(dy / b.h)) bk.ballVX = -bk.ballVX;
+        else bk.ballVY = -bk.ballVY;
+      }
+    });
+
+    // check win
+    if (bk.bricks.every(function(b){return !b.alive;}) && !bk.phaseComplete) {
+      bk.phaseComplete = true;
+      setTimeout(function() { if (currentPhase < PHASES.length - 1) advancePhase(); }, 1200);
+    }
   }
 
-  if (surf.alive) {
-    surf.scroll += surf.speed;
-    surf.speed += 0.001; // gentle acceleration
-  }
-
-  // ── scrolling text (the content) ──
-  const _dim = _css("--dim"), _gridC = _css("--grid");
-  ctx.font = "13px " + _fontFace();
-  ctx.textAlign = "center";
-  const textStartY = H + 40 - surf.scroll * 0.6;
-  surf.lines.forEach((line, i) => {
-    const y = textStartY + i * surf.lineH;
-    if (y > -20 && y < H + 20) {
-      ctx.fillStyle = y < H / 2 ? _dim : _gridC;
-      ctx.fillText(line.trim(), W / 2, y);
+  // draw bricks
+  bk.bricks.forEach(function(b) {
+    if (b.flash > 0) b.flash--;
+    if (b.alive) {
+      ctx.fillStyle = accent; ctx.globalAlpha = 0.12;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      ctx.fillStyle = dim; ctx.font = "9px " + font; ctx.textAlign = "center";
+      ctx.fillText(b.label, b.x + b.w/2, b.y + b.h/2 + 3, b.w - 4);
+    } else if (b.flash > 0) {
+      ctx.fillStyle = ok; ctx.globalAlpha = b.flash / 30 * 0.3;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.globalAlpha = 1;
     }
   });
 
-  // check if all text has scrolled past
-  const lastLineY = textStartY + surf.lines.length * surf.lineH;
-  if (lastLineY < 0 && !surf.phaseComplete) {
-    surf.phaseComplete = true;
-    setTimeout(() => { if (currentPhase < PHASES.length - 1) advancePhase(); }, 1000);
+  // revealed concepts trail
+  if (bk.revealed.length > 0) {
+    ctx.fillStyle = dim; ctx.font = "10px " + font; ctx.textAlign = "center";
+    ctx.globalAlpha = 0.6;
+    var trail = bk.revealed.slice(-12).join("  \u00b7  ");
+    ctx.fillText(trail, W/2, H - 52, W - 40);
+    ctx.globalAlpha = 1;
   }
 
-  // ── obstacles ──
-  ctx.fillStyle = _dim;
-  surf.obstacles.forEach(ob => {
-    const oy = ob.y + surf.scroll;
-    if (oy < -50 || oy > H + 50) return;
-    const ox = ob.lane * surf.laneW + (surf.laneW - ob.w) / 2;
-    ctx.fillRect(ox, oy, ob.w, ob.h);
+  // paddle
+  ctx.fillStyle = accent;
+  ctx.fillRect(bk.paddleX - bk.paddleW/2, bk.paddleY, bk.paddleW, bk.paddleH);
 
-    // collision
-    if (surf.alive) {
-      const px = surf.lane * surf.laneW + (surf.laneW - surf.playerW) / 2;
-      if (
-        px < ox + ob.w && px + surf.playerW > ox &&
-        surf.playerY < oy + ob.h && surf.playerY + surf.playerH > oy
-      ) {
-        surf.alive = false;
-      }
-      if (!ob.passed && oy > surf.playerY) {
-        ob.passed = true;
-        surf.score++;
-      }
-    }
-  });
+  // ball
+  ctx.fillStyle = accent;
+  ctx.beginPath(); ctx.arc(bk.ballX, bk.ballY, bk.ballR, 0, Math.PI*2); ctx.fill();
 
-  // ── player ──
-  const px = surf.lane * surf.laneW + (surf.laneW - surf.playerW) / 2;
-  const _accent = _css("--accent"), _err = _css("--err");
-  ctx.fillStyle = surf.alive ? _accent : _err;
-  ctx.fillRect(px, surf.playerY, surf.playerW, surf.playerH);
-  ctx.strokeStyle = surf.alive ? _accent : _err;
-  ctx.strokeRect(px, surf.playerY, surf.playerW, surf.playerH);
-
-  // ── HUD ──
-  $hud.innerHTML = `SCORE: ${surf.score}<br>SPEED: ${surf.speed.toFixed(1)}` +
-    (surf.alive ? "" : "<br><br>SPACE to retry");
-
-  // ── equation at top ──
-  ctx.fillStyle = _accent;
-  ctx.font = "11px " + _fontFace();
-  ctx.textAlign = "left";
-  ctx.fillText(surf.eq, 12, 18);
-
-  if (surf.alive) {
-    _surferRAF = requestAnimationFrame(surferLoop);
+  // HUD
+  ctx.fillStyle = accent; ctx.font = "11px " + font; ctx.textAlign = "left";
+  ctx.fillText(bk.eq, 12, 18);
+  var alive = bk.bricks.filter(function(b){return b.alive;}).length;
+  ctx.textAlign = "right"; ctx.fillStyle = dim;
+  ctx.fillText("bricks: " + alive + "  lives: " + bk.lives, W - 12, 18);
+  if (!bk.launched) {
+    ctx.textAlign = "center"; ctx.fillStyle = dim; ctx.font = "11px " + font;
+    ctx.fillText("SPACE or click to launch", W/2, H - 8);
   }
+  ctx.textAlign = "left"; ctx.fillStyle = dim; ctx.font = "10px " + font;
+  ctx.fillText("[R] reset  [Tab] skip", 12, H - 8);
+
+  _bricksRAF = requestAnimationFrame(bricksLoop);
 }
 
 
@@ -593,4 +661,4 @@ if (archeryUnlocked) {
   const ab = document.getElementById("btn-archery");
   if (ab) ab.classList.remove("locked");
 }
-setMode("reader");   // default mode
+setMode("bricks");   // default mode

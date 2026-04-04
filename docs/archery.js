@@ -9,30 +9,37 @@ const ARCHERY_LEVELS = [
   { title:"The Golden Target",
     brief:"Find the fixed point of x \u21a6 1 + 1/x",
     eq:"x\u00b2 \u2212 x \u2212 1 = 0  \u2192  \u03c6",
+    adds:"Adds: GRAVITY \u2014 a constant force bends the arrow's path",
     hint:"The simplest truth: a map that returns to itself." },
   { title:"Mediant Precision",
     brief:"Hit the mediant: (a+c)/(b+d)\nNavigate the tree toward 1/\u03c6",
     eq:"mediant(a/b, c/d) = (a+c)/(b+d)",
+    adds:"Adds: THE TREE \u2014 three mediants, zero gravity, pure aim",
     hint:"Between any two rationals, the mediant waits." },
   { title:"Resonance Lock",
     brief:"Fire when the oscillator synchronizes\nCoupling K increases \u2014 wait for the lock",
     eq:"d\u03b8/dt = \u03c9 + K\u00b7sin(\u0394\u03b8)",
+    adds:"Adds: TIME \u2014 the target oscillates as coupling K grows",
     hint:"Oscillators couple. Phases align. Wait for the lock." },
   { title:"Iterate to Convergence",
     brief:"Each arrow warps the field for the next\nConverge on the fixed point \u2014 x = f(x)",
     eq:"N(p/q) = N\u00b7g\u00b7w(K|r|)",
+    adds:"Adds: SELF-REFERENCE \u2014 stuck arrows create new gravity wells",
     hint:"Fire into the field. Let the field answer. Iterate." },
   { title:"Three Observables",
     brief:"One arrow, three bands\nFind the geodesic that threads \u03a9_\u039b, a\u2080, n\u209b",
     eq:"\u03a9_\u039b = 0.684 \u00b7 a\u2080 = cH/2\u03c0 \u00b7 n\u209b = 0.965",
+    adds:"Adds: MULTIPLICITY \u2014 one geodesic must thread three bands",
     hint:"Three numbers. One arrow. The geodesic knows the way." },
   { title:"Thread the Tongue",
     brief:"Arnold tongue gaps narrow as 1/q\u00b2\nThread the arrow through",
     eq:"\u03a3 1/q\u00b2 = \u03c0\u00b2/6",
+    adds:"Adds: TOPOLOGY \u2014 walls with gaps that shrink as 1/q\u00b2",
     hint:"The tongues narrow. Only the irrational path remains." },
   { title:"The Return",
     brief:"The target is the archer\nLet curvature complete the circle",
     eq:"\u03c6 \u00b7 \u03c8 = 1",
+    adds:"Adds: CURVATURE \u2014 a central attractor warps all paths home",
     hint:"The target was always here." },
 ];
 
@@ -282,7 +289,10 @@ function archeryLoop() {
     ctx.fillStyle=accent; ctx.font="bold 22px "+font;
     ctx.fillText("\u00a7"+(lvl+1)+"  "+lv.title, W/2, H*0.28);
     ctx.fillStyle=fg; ctx.font="15px "+font;
-    lv.brief.split("\n").forEach(function(l,i){ctx.fillText(l,W/2,H*0.40+i*24);});
+    var briefLines=lv.brief.split("\n");
+    briefLines.forEach(function(l,i){ctx.fillText(l,W/2,H*0.36+i*24);});
+    ctx.fillStyle=accent; ctx.font="bold 12px "+font;
+    ctx.fillText(lv.adds, W/2, H*0.36+briefLines.length*24+14);
     ctx.fillStyle=dim; ctx.font="13px "+font;
     ctx.fillText(lv.eq, W/2, H*0.58);
     drawArtemis(ctx,W/2-80,H*0.73,0,accent,true);
@@ -526,9 +536,19 @@ function drawArtemis(ctx, x, y, angle, color, armed) {
   ctx.strokeStyle=color; ctx.lineWidth=1.5;
   // head
   ctx.beginPath(); ctx.arc(0,-20,5,0,Math.PI*2); ctx.stroke();
-  // crescent atop
-  ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.arc(0,-30,4,0.4,Math.PI*2-0.4); ctx.stroke();
+  // crescent moon diadem
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(0,-20,7,Math.PI+0.5,-0.5); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-6,-24); ctx.lineTo(-4,-33);
+  ctx.moveTo(6,-24); ctx.lineTo(4,-33);
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-1.5,-26); ctx.lineTo(0,-38); ctx.lineTo(1.5,-26); ctx.stroke();
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.arc(0,-37,3.5,0,Math.PI*2);
+  ctx.arc(1.2,-38,3,0,Math.PI*2,true);
+  ctx.fill();
   // body
   ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(0,8); ctx.stroke();
