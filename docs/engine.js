@@ -241,6 +241,8 @@ let bk = {};
 
 function _css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 function _fontFace() { return _css("--user-face") || _css("--mono"); }
+// scale factor for canvas text based on user font size preference (base 16)
+function _canvasScale() { var s = parseInt(_css("--user-size")) || 16; return Math.max(0.75, Math.min(1.5, s / 16)); }
 
 // key concepts per phase for brick labels
 const BRICK_CONCEPTS = [
@@ -301,11 +303,18 @@ function initBricks() {
     oscillators: [], // {x, y, amp, freq, phase, life, maxLife, label}
     trail: [],       // ball trail for geodesic visualization
     maxTrail: 120,
+    // intro splash for first-time orientation
+    showIntro: !bk._hasPlayed,
+    introTime: 0,
   };
+  bk._hasPlayed = true;
 
   canvas.onmousemove = bricksMouseMove;
   canvas.ontouchmove = function(e) { e.preventDefault(); bricksMouseMove(e.touches[0]); };
-  canvas.onclick = function() { if (!bk.launched) launchBall(); };
+  canvas.onclick = function() {
+    if (bk.showIntro) { bk.showIntro = false; return; }
+    if (!bk.launched) launchBall();
+  };
   document.onkeydown = bricksKey;
 
   bricksLoop();
@@ -327,6 +336,9 @@ function bricksMouseMove(e) {
 
 function bricksKey(e) {
   if (currentMode !== "bricks") return;
+  if (bk.showIntro && (e.key === " " || e.key === "Enter")) {
+    e.preventDefault(); bk.showIntro = false; return;
+  }
   if (e.key === "ArrowLeft")  bk.paddleX = Math.max(bk.paddleW/2, bk.paddleX - 24);
   if (e.key === "ArrowRight") bk.paddleX = Math.min(bk.W - bk.paddleW/2, bk.paddleX + 24);
   if (e.key === " " && !bk.launched) { e.preventDefault(); launchBall(); }
@@ -545,6 +557,28 @@ function bricksLoop() {
   ctx.strokeStyle = grid; ctx.lineWidth = 0.5;
   for (var y = 50; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
   for (var x = 50; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+
+  // ── intro splash ──
+  if (bk.showIntro) {
+    bk.introTime++;
+    var phase = PHASES[currentPhase];
+    ctx.textAlign = "center";
+    ctx.fillStyle = accent; ctx.font = "bold 18px " + font;
+    ctx.fillText("\u00a7" + (currentPhase + 1) + "  " + phase.title, W / 2, H * 0.28);
+    ctx.fillStyle = fg; ctx.font = "13px " + font;
+    ctx.fillText("Break the bricks. Each concept becomes a force.", W / 2, H * 0.38);
+    ctx.fillStyle = accent; ctx.font = "12px " + font;
+    ctx.fillText(phase.equation, W / 2, H * 0.48);
+    ctx.fillStyle = dim; ctx.font = "11px " + font;
+    ctx.fillText("mouse / arrows: move paddle    SPACE / click: launch ball", W / 2, H * 0.60);
+    ctx.fillText("broken bricks spawn gravity wells, attractors, and wave fields", W / 2, H * 0.66);
+    if (bk.introTime > 30) {
+      ctx.fillStyle = accent; ctx.font = "12px " + font;
+      ctx.fillText("click or SPACE to begin", W / 2, H * 0.80);
+    }
+    _bricksRAF = requestAnimationFrame(bricksLoop);
+    return;
+  }
 
   // draw active effects (behind ball)
   drawEffects(ctx, W, H);

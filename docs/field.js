@@ -113,7 +113,10 @@ function fieldMove(e) {
 function fieldDown(e) {
   if (e && e.preventDefault) e.preventDefault();
   if (fd.state === "intro") { fd.state = "playing"; return; }
-  if (fd.state === "cleared") { if (fd.lvl < 6) advancePhase(); return; }
+  if (fd.state === "cleared") {
+    if (fd.time - fd.clearedAt < 120) return; // mandatory 2s pause
+    if (fd.lvl < 6) advancePhase(); return;
+  }
 
   switch (fd.lvl) {
     case 0: cobwebClick(); break;
@@ -130,13 +133,19 @@ function fieldKey(e) {
   if (currentMode !== "field") return;
   if (fd.state === "intro" && (e.key === " " || e.key === "Enter"))
     { e.preventDefault(); fd.state = "playing"; return; }
-  if (fd.state === "cleared" && (e.key === " " || e.key === "Enter"))
-    { e.preventDefault(); if (fd.lvl < 6) advancePhase(); return; }
+  if (fd.state === "cleared" && (e.key === " " || e.key === "Enter")) {
+    e.preventDefault();
+    if (fd.time - fd.clearedAt < 120) return; // mandatory 2s pause
+    if (fd.lvl < 6) advancePhase(); return;
+  }
   if (e.key === "Tab") { e.preventDefault(); advancePhase(); }
   if (e.key === "r" && fd.state === "playing") initField();
 }
 
-function fieldCleared() { fd.state = "cleared"; fd.cleared = true; }
+function fieldCleared() {
+  fd.state = "cleared"; fd.cleared = true;
+  fd.clearedAt = fd.time; // timestamp for pause timer
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1370,6 +1379,7 @@ function fieldLoop() {
 
   // ── cleared ──
   if (fd.state === "cleared") {
+    fd.time++; // keep timer running for pause tracking
     ctx.strokeStyle = grid; ctx.lineWidth = 0.5;
     for (var y2 = 50; y2 < H; y2 += 50) { ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(W, y2); ctx.stroke(); }
     for (var x2 = 50; x2 < W; x2 += 50) { ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, H); ctx.stroke(); }
@@ -1397,8 +1407,21 @@ function fieldLoop() {
     ctx.fillText(lv2.eq, W / 2, H * 0.48);
     ctx.fillStyle = accent; ctx.font = "13px " + font;
     ctx.fillText('"' + lv2.hint + '"', W / 2, H * 0.58);
-    ctx.fillStyle = dim; ctx.font = "11px " + font;
-    ctx.fillText(lvl < 6 ? "click or SPACE \u2192 next" : "\u03c6 \u00b7 \u03c8 = 1 \u2014 the field contains itself", W / 2, H * 0.72);
+    // deliberate pause before allowing continue
+    var elapsed = fd.time - fd.clearedAt;
+    if (elapsed < 120) {
+      // breathing dots during mandatory pause
+      var dots = ".".repeat(Math.floor(elapsed / 20) % 4);
+      ctx.fillStyle = dim; ctx.font = "11px " + font;
+      ctx.fillText(dots, W / 2, H * 0.72);
+    } else {
+      // fade in continue prompt
+      var fadeIn = Math.min(1, (elapsed - 120) / 60);
+      ctx.globalAlpha = fadeIn;
+      ctx.fillStyle = dim; ctx.font = "11px " + font;
+      ctx.fillText(lvl < 6 ? "click or SPACE \u2192 next" : "\u03c6 \u00b7 \u03c8 = 1 \u2014 the field contains itself", W / 2, H * 0.72);
+      ctx.globalAlpha = 1;
+    }
 
     _fieldRAF = requestAnimationFrame(fieldLoop); return;
   }
