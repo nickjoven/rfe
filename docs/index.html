@@ -180,19 +180,18 @@ body{background:var(--bg);color:var(--fg);
   padding:6px 16px;font-family:var(--mono);font-size:12px;cursor:pointer}
 #reader-choices button:hover{border-color:var(--accent);color:var(--accent)}
 
-/* ── puzzle mode ─────────────────────────────────────────── */
-#puzzle{display:none;flex-direction:column;height:100%;padding:24px}
-#puzzle-grid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+/* ── puzzle mode (equation audit) ───────────────────────── */
+#puzzle{display:none;flex-direction:column;height:100%;padding:24px;overflow-y:auto}
+#puzzle-grid{display:flex;flex-direction:column;align-items:center;gap:12px;padding-bottom:24px}
 .puzzle-card{
-  border:1px solid var(--dim);padding:16px 24px;max-width:600px;width:100%;
-  cursor:pointer;transition:all .3s;border-radius:var(--radius)}
+  border:1px solid var(--dim);padding:12px 20px;max-width:640px;width:100%;
+  transition:all .3s;border-radius:var(--radius)}
 .puzzle-card:hover{border-color:var(--accent)}
-.puzzle-card.dissolved{border-color:var(--ok-dim);color:var(--ok);opacity:.6}
-.puzzle-card .assumption{font-size:13px;color:var(--fg)}
-.puzzle-card .challenge{font-size:11px;color:var(--dim);margin-top:8px;display:none}
-.puzzle-card.revealed .challenge{display:block}
-.puzzle-card.dissolved .challenge{color:var(--ok)}
-#puzzle-status{text-align:center;padding:8px;font-size:12px;color:var(--dim)}
+.puzzle-card.dissolved{border-color:var(--ok-dim);opacity:.7}
+.puzzle-term{transition:all .15s !important}
+.puzzle-term:hover{box-shadow:var(--glow)}
+.puzzle-term.wrong{text-decoration:line-through}
+#puzzle-status{text-align:center;padding:8px 8px 16px;font-size:12px;color:var(--dim)}
 </style>
 </head>
 <body>

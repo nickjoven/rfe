@@ -835,47 +835,133 @@ function renderPlant(progress) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODE 4: PUZZLE
+// MODE 4: PUZZLE — Equation Audit
+// Identify the free parameter / arbitrary normalization in each equation.
+// Click the problematic term to dissolve it; see the RFE replacement.
 // ═══════════════════════════════════════════════════════════════════════════
 
-let puzzle = { dissolved: new Set() };
+// Each audit: equation terms, which index is the normalization, and the fix
+const EQUATION_AUDITS = [
+  { // Phase 1: Fixed Points
+    title: "Fixed Points",
+    eq: "Parameters are inputs from experiment",
+    terms: ["masses m\u1d62", "couplings g\u1d62", "free parameters", "boundary conditions"],
+    answer: 2,
+    hint: "Which of these is assumed, not derived?",
+    fix: "Parameters are fixed points of x = f(x). The golden ratio \u03c6 is not measured \u2014 it is the unique solution.",
+  },
+  { // Phase 2: Rational Approximation
+    title: "Rational Approximation",
+    eq: "Fields are real-valued: \u03c6 \u2208 \u211d",
+    terms: ["real numbers \u211d", "continuum limit", "dense subset \u211a", "Lebesgue measure"],
+    answer: 0,
+    hint: "Which domain assumption hides the structure of resonance?",
+    fix: "Resonance only locks at rationals p/q. The Stern-Brocot tree is the natural basis \u2014 \u211d is the continuum limit, not the foundation.",
+  },
+  { // Phase 3: Synchronization
+    title: "Synchronization",
+    eq: "U(1) \u00d7 SU(2) \u00d7 SU(3) with independent couplings",
+    terms: ["U(1) coupling e", "SU(2) coupling g", "SU(3) coupling g\u209b", "independent couplings"],
+    answer: 3,
+    hint: "What makes the Standard Model need three separate gauge groups?",
+    fix: "All forces are Arnold tongues at different p/q on one tree with one coupling K. Three groups \u2192 three tongues.",
+  },
+  { // Phase 4: Field Equation
+    title: "The Field Equation",
+    eq: "Inflation: V(\u03c6) = V\u2080(1 \u2212 e^{\u2212\u221a(2/3)\u03c6})\u00b2",
+    terms: ["inflaton field \u03c6", "slow-roll potential V(\u03c6)", "initial amplitude V\u2080", "e-folding count N"],
+    answer: 1,
+    hint: "Which element is postulated rather than derived?",
+    fix: "Scale invariance emerges at the fixed point of N = N\u00b7g\u00b7w. No inflaton needed. The tilt n\u209b = 0.965 comes from tree geometry.",
+  },
+  { // Phase 5: Observables
+    title: "Observables",
+    eq: "\u039b = 10\u00b2\u00b9 \u00d7 \u039b_observed (the cosmological constant problem)",
+    terms: ["\u039b (cosmological constant)", "UV cutoff M\u209a\u2074", "vacuum energy \u27e8\u03c1\u27e9", "fine-tuning 10\u207b\u00b9\u00b2\u2070"],
+    answer: 3,
+    hint: "Which step introduces the 120 orders of magnitude?",
+    fix: "\u03a9_\u039b = 13/19 = 0.684. No cutoff, no fine-tuning. The ratio is a tree coordinate, not a cancellation.",
+  },
+  { // Phase 6: Continuum Limit
+    title: "The Continuum Limit",
+    eq: "S = \u222b(\u00bd R \u2212 \u039b) \u221ag d\u2074x  (Einstein-Hilbert action)",
+    terms: ["\u221ag (metric determinant)", "Ricci scalar R", "least action principle \u03b4S = 0", "\u039b (cosmological constant)"],
+    answer: 2,
+    hint: "Which principle is postulated axiomatically rather than derived?",
+    fix: "The metric IS the order parameter. Curvature IS tongue density. G\u03bcv = 8\u03c0T\u03bcv follows from self-consistency at K = 1.",
+  },
+  { // Phase 7: Dissolution
+    title: "Dissolution",
+    eq: "Physics needs new particles / dimensions / principles",
+    terms: ["dark matter particles", "extra dimensions", "new symmetry principles", "separate normalizations"],
+    answer: 3,
+    hint: "What creates the apparent need for all the others?",
+    fix: "Remove separate normalizations \u2192 one equation, one tree, one coupling. The anomalies dissolve. \u03c6 \u00b7 \u03c8 = 1.",
+  },
+];
+
+let puzzle = { dissolved: new Set(), wrong: {} };
 
 function initPuzzle() {
   const $p = document.getElementById("puzzle");
   $p.style.display = "flex";
+  puzzle.wrong = {};
   renderPuzzle();
 }
 
 function renderPuzzle() {
   const $p = document.getElementById("puzzle");
   const dissolved = puzzle.dissolved.size;
+  const total = EQUATION_AUDITS.length;
 
   $p.innerHTML = `
     <div id="puzzle-status">
-      Anomalies dissolved: ${dissolved}/${PHASES.length} — click an assumption to challenge it
+      Normalizations dissolved: ${dissolved}/${total} — find the arbitrary term in each equation
     </div>
     <div id="puzzle-grid">
-      ${PHASES.map((ph, i) => {
+      ${EQUATION_AUDITS.map((audit, i) => {
         const isDissolved = puzzle.dissolved.has(i);
-        const isRevealed  = isDissolved; // could add intermediate state
+        const wrongSet = puzzle.wrong[i] || new Set();
         return `
-          <div class="puzzle-card ${isDissolved ? "dissolved" : ""} ${isRevealed ? "revealed" : ""}"
-               onclick="puzzleClick(${i})" data-idx="${i}">
+          <div class="puzzle-card ${isDissolved ? "dissolved" : ""}" data-idx="${i}">
             <div style="font-size:10px;color:var(--dim);margin-bottom:4px">
-              §${i+1} ${ph.title} · <em>${ph.repo}</em>
+              §${i+1} ${audit.title}
             </div>
-            <div class="assumption">
-              ${isDissolved ? "✓ " : "▸ "}${escHtml(ph.assumption)}
+            <div class="puzzle-eq" style="font-size:12px;margin-bottom:6px;color:var(--fg)">
+              ${escHtml(audit.eq)}
             </div>
-            <div class="challenge">
-              → ${escHtml(ph.challenge)}
-            </div>
+            ${isDissolved ? `
+              <div class="puzzle-fix" style="font-size:11px;color:var(--ok);margin-top:4px">
+                ✓ ${escHtml(audit.fix)}
+              </div>
+            ` : `
+              <div class="puzzle-hint" style="font-size:10px;color:var(--dim);margin-bottom:6px;font-style:italic">
+                ${escHtml(audit.hint)}
+              </div>
+              <div class="puzzle-terms" style="display:flex;flex-wrap:wrap;gap:6px">
+                ${audit.terms.map((t, ti) => {
+                  const isWrong = wrongSet.has(ti);
+                  return `<button class="puzzle-term ${isWrong ? "wrong" : ""}"
+                    onclick="puzzleTermClick(${i},${ti})"
+                    style="background:none;border:1px solid ${isWrong ? "var(--err)" : "var(--dim)"};
+                    color:${isWrong ? "var(--err)" : "var(--fg)"};padding:3px 10px;
+                    font-family:var(--mono);font-size:11px;cursor:pointer;
+                    border-radius:var(--radius);opacity:${isWrong ? "0.4" : "1"};
+                    ${isWrong ? "pointer-events:none;" : ""}
+                    transition:all .15s"
+                    onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+                    onmouseout="this.style.borderColor='${isWrong ? "var(--err)" : "var(--dim)"}';this.style.color='${isWrong ? "var(--err)" : "var(--fg)"}'">
+                    ${escHtml(t)}
+                  </button>`;
+                }).join("")}
+              </div>
+            `}
           </div>`;
       }).join("")}
     </div>
-    ${dissolved === PHASES.length ? `
+    ${dissolved === total ? `
       <div style="text-align:center;padding:16px;color:var(--accent)">
-        All anomalies dissolved. φ · ψ = 1.
+        All normalizations dissolved. The map contains the territory. \u03c6 \u00b7 \u03c8 = 1.
       </div>` : ""}
   `;
 
@@ -884,19 +970,20 @@ function renderPuzzle() {
   };
 }
 
-function puzzleClick(i) {
-  const card = document.querySelector(`.puzzle-card[data-idx="${i}"]`);
-  if (puzzle.dissolved.has(i)) return;
+function puzzleTermClick(phaseIdx, termIdx) {
+  if (puzzle.dissolved.has(phaseIdx)) return;
+  const audit = EQUATION_AUDITS[phaseIdx];
 
-  if (!card.classList.contains("revealed")) {
-    card.classList.add("revealed");
-    card.querySelector(".challenge").style.display = "block";
+  if (termIdx === audit.answer) {
+    // correct — dissolve
+    puzzle.dissolved.add(phaseIdx);
+    if (puzzle.dissolved.size >= EQUATION_AUDITS.length) unlockArchery();
   } else {
-    // second click dissolves
-    puzzle.dissolved.add(i);
-    renderPuzzle();
-    if (puzzle.dissolved.size >= PHASES.length) unlockArchery();
+    // wrong — mark this term
+    if (!puzzle.wrong[phaseIdx]) puzzle.wrong[phaseIdx] = new Set();
+    puzzle.wrong[phaseIdx].add(termIdx);
   }
+  renderPuzzle();
 }
 
 // ── utils ──────────────────────────────────────────────────────────────────
