@@ -661,4 +661,4 @@ if (archeryUnlocked) {
   const ab = document.getElementById("btn-archery");
   if (ab) ab.classList.remove("locked");
 }
-setMode("reader");   // default mode
+setMode("bricks");   // default mode
