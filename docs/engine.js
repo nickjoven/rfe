@@ -74,6 +74,8 @@ function unlockArchery() {
   try { localStorage.setItem("rfe-archery-unlocked", "1"); } catch(e) {}
   const b = document.getElementById("btn-archery");
   if (b) b.classList.remove("locked");
+  const bf = document.getElementById("btn-field");
+  if (bf) bf.classList.remove("locked");
 }
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -117,9 +119,10 @@ function advancePhase() {
 // ── mode switching ─────────────────────────────────────────────────────────
 function setMode(mode) {
   if (mode === "archery" && !archeryUnlocked) return;
+  if (mode === "field" && !archeryUnlocked) return;
   currentMode = mode;
   // hide all
-  ["typewriter","bricks","reader","puzzle","archery"].forEach(m => {
+  ["typewriter","bricks","reader","puzzle","archery","field"].forEach(m => {
     document.getElementById(m).style.display = "none";
   });
   document.querySelectorAll("#topbar .modes button").forEach(b => b.classList.remove("active"));
@@ -131,6 +134,7 @@ function setMode(mode) {
   document.onkeydown = null;
   if (_bricksRAF) { cancelAnimationFrame(_bricksRAF); _bricksRAF = null; }
   if (_archeryRAF) { cancelAnimationFrame(_archeryRAF); _archeryRAF = null; }
+  if (_fieldRAF) { cancelAnimationFrame(_fieldRAF); _fieldRAF = null; }
 
   // init
   switch (mode) {
@@ -139,6 +143,7 @@ function setMode(mode) {
     case "reader":     initReader();     break;
     case "puzzle":     initPuzzle();     break;
     case "archery":    initArchery();    break;
+    case "field":      initField();      break;
   }
 }
 
@@ -660,5 +665,7 @@ updatePips();
 if (archeryUnlocked) {
   const ab = document.getElementById("btn-archery");
   if (ab) ab.classList.remove("locked");
+  const fb = document.getElementById("btn-field");
+  if (fb) fb.classList.remove("locked");
 }
 setMode("bricks");   // default mode
