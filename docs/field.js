@@ -45,9 +45,11 @@ var FIELD_LEVELS = [
     hint:"The map contains the territory. Fire and return." },
 ];
 
-/* ── constants ──────────────────────────────────────────────────────────── */
-var PHI = (1 + Math.sqrt(5)) / 2;   // 1.618...
-var IPHI = PHI - 1;                   // 1/phi = 0.618...
+/* ── helpers (from docs/physics.js) ────────────────────────────────────── */
+var PHI = window.Physics.PHI;
+var IPHI = window.Physics.IPHI;
+var smoothstep = window.Physics.smoothstep;
+var contractionMap = window.Physics.contractionMap;
 
 
 /* ── init ────────────────────────────────────────────────────────────────── */
@@ -853,14 +855,6 @@ function setupContraction() {
   };
 }
 
-function contractionMap(x, y) {
-  // contraction map: rotational + contractive toward (1/φ, 1/φ)
-  // f(x,y) = ((1+y)/(1+x+y), (1+x)/(1+x+y))
-  var denom = 1 + x + y;
-  if (Math.abs(denom) < 0.01) denom = 0.01;
-  return {x: (1 + y) / denom, y: (1 + x) / denom};
-}
-
 function contractionClick() {
   var ct = fd.contraction;
   if (ct.converged >= ct.needed) return;
@@ -1176,10 +1170,6 @@ function stepTongues() {
   });
 }
 
-function smoothstep(x) {
-  x = Math.max(0, Math.min(1, x));
-  return x * x * (3 - 2 * x);
-}
 
 function drawTongues(ctx, W, H) {
   var tg = fd.tongue;
